@@ -257,18 +257,24 @@ end
 -- SECTION 3: PLUGIN MANAGER INTRO
 -- vim.pack intro, build hooks
 -- ============================================================
+local is_windows = vim.fn.has 'win32' == 1
+local basic_treesitter_parsers = { 'bash', 'c', 'diff', 'html', 'lua', 'luadoc', 'markdown', 'markdown_inline', 'query', 'vim', 'vimdoc' }
+local windows_parser_paths = {}
 do
-  -- Use local Treesitter checkouts on Windows when curl cannot download these parsers.
-  if vim.fn.has 'win32' == 1 then
+  -- The work laptop's curl fails Schannel revocation checks. Only install from local checkouts on Windows.
+  if is_windows then
+    for _, name in ipairs(basic_treesitter_parsers) do
+      local checkout = name == 'markdown_inline' and 'markdown' or name
+      local path = vim.env.USERPROFILE .. '/.local/parsers/' .. checkout
+      if vim.fn.isdirectory(path) == 1 then windows_parser_paths[name] = path end
+    end
+
     vim.api.nvim_create_autocmd('User', {
       pattern = 'TSUpdate',
       callback = function()
         local parsers = require 'nvim-treesitter.parsers'
-        for _, name in ipairs { 'vimdoc', 'diff' } do
-          local path = vim.env.USERPROFILE .. '/.local/parsers/' .. name
-          if vim.fn.isdirectory(path) == 1 then
-            parsers[name].install_info.path = path
-          end
+        for name, path in pairs(windows_parser_paths) do
+          parsers[name].install_info.path = path
         end
       end,
     })
@@ -326,7 +332,7 @@ do
         return
       end
 
-      if name == 'nvim-treesitter' then
+      if name == 'nvim-treesitter' and not is_windows then
         if not ev.data.active then vim.cmd.packadd 'nvim-treesitter' end
         vim.cmd 'TSUpdate'
         return
@@ -968,8 +974,9 @@ do
   vim.pack.add { { src = gh 'nvim-treesitter/nvim-treesitter', version = 'main' } }
 
   -- Ensure basic parsers are installed
-  local parsers = { 'bash', 'c', 'diff', 'html', 'lua', 'luadoc', 'markdown', 'markdown_inline', 'query', 'vim', 'vimdoc' }
-  require('nvim-treesitter').install(parsers)
+  local parsers = basic_treesitter_parsers
+  if is_windows then parsers = vim.tbl_filter(function(name) return windows_parser_paths[name] ~= nil end, parsers) end
+  if #parsers > 0 then require('nvim-treesitter').install(parsers) end
 
   ---@param buf integer
   ---@param language string
@@ -1009,11 +1016,11 @@ do
       if vim.tbl_contains(installed_parsers, language) then
         -- Enable the parser if it is already installed
         treesitter_try_attach(buf, language)
-      elseif vim.tbl_contains(available_parsers, language) then
+      elseif vim.tbl_contains(available_parsers, language) and (not is_windows or windows_parser_paths[language]) then
         -- If a parser is available in `nvim-treesitter`, auto-install it and enable it after the installation is done
         require('nvim-treesitter').install(language):await(function() treesitter_try_attach(buf, language) end)
       else
-        -- Try to enable treesitter features in case the parser exists but is not available from `nvim-treesitter`
+        -- Try an existing parser, including parsers bundled with Neovim.
         treesitter_try_attach(buf, language)
       end
     end,
