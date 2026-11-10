@@ -579,6 +579,10 @@ do
 
   -- See `:help telescope.builtin`
   local builtin = require 'telescope.builtin'
+
+  vim.keymap.set('n', '<leader>hh', function()
+    builtin.git_status { path_display = { 'filename_first' }, previewer = false }
+  end, { desc = '[G]it [S]tatus' })
   vim.keymap.set('n', '<leader>sh', builtin.help_tags, { desc = '[S]earch [H]elp' })
   vim.keymap.set('n', '<leader>sk', builtin.keymaps, { desc = '[S]earch [K]eymaps' })
   vim.keymap.set('n', '<leader>sf', builtin.find_files, { desc = '[S]earch [F]iles' })
@@ -886,19 +890,15 @@ end
 -- blink.cmp and luasnip setup
 -- ============================================================
 do
-  -- [[ Snippet Engine ]]
+  -- Blink uses Neovim's built-in snippet engine on Windows.
+  if not is_windows then
+    vim.pack.add { { src = gh 'L3MON4D3/LuaSnip', version = vim.version.range '2.*' } }
+    require('luasnip').setup {}
 
-  -- NOTE: You can also specify plugin using a version range for its git tag.
-  --  See `:help vim.version.range()` for more info
-  vim.pack.add { { src = gh 'L3MON4D3/LuaSnip', version = vim.version.range '2.*' } }
-  require('luasnip').setup {}
-
-  -- `friendly-snippets` contains a variety of premade snippets.
-  --    See the README about individual language/framework/plugin snippets:
-  --    https://github.com/rafamadriz/friendly-snippets
-  --
-  -- vim.pack.add { gh 'rafamadriz/friendly-snippets' }
-  -- require('luasnip.loaders.from_vscode').lazy_load()
+    -- `friendly-snippets` contains premade snippets: https://github.com/rafamadriz/friendly-snippets
+    -- vim.pack.add { gh 'rafamadriz/friendly-snippets' }
+    -- require('luasnip.loaders.from_vscode').lazy_load()
+  end
 
   -- [[ Autocomplete Engine ]]
   vim.pack.add { { src = gh 'saghen/blink.cmp', version = vim.version.range '1.*' } }
@@ -947,7 +947,7 @@ do
       default = { 'lsp', 'path', 'snippets' },
     },
 
-    snippets = { preset = 'luasnip' },
+    snippets = { preset = is_windows and 'default' or 'luasnip' },
 
     -- Blink.cmp includes an optional, recommended rust fuzzy matcher,
     -- which automatically downloads a prebuilt binary when enabled.

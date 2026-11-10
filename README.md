@@ -15,9 +15,9 @@ The `--delete` option removes files from `~/.config/nvim` that are not in the re
 
 ## Set up Neovim on Windows
 
-Use Neovim 0.12 or newer and Git. Close Neovim, back up any existing `%LOCALAPPDATA%\nvim` folder, then use File Explorer to paste `init.lua`, `lua\`, and `nvim-pack-lock.windows.json` into `%LOCALAPPDATA%\nvim`. Rename the copied lockfile to **`nvim-pack-lock.json`** before starting Neovim. The Windows lockfile omits Mason and its two companion plugins.
+Use Neovim 0.12 or newer and Git. Close Neovim, back up any existing `%LOCALAPPDATA%\nvim` folder, then use File Explorer to paste `init.lua`, `lua\`, and `nvim-pack-lock.windows.json` into `%LOCALAPPDATA%\nvim`. Rename the copied lockfile to **`nvim-pack-lock.json`** before starting Neovim. The Windows lockfile omits Mason, its two companion plugins, and LuaSnip. Blink uses Neovim's built-in snippet engine on Windows.
 
-If you've already used Mason on the laptop, move `mason.nvim`, `mason-lspconfig.nvim`, and `mason-tool-installer.nvim` out of `%LOCALAPPDATA%\nvim-data\site\pack\core\opt` before first launch with the new lockfile. `vim.pack` records plugin folders it finds there.
+If these plugins were previously installed, move `mason.nvim`, `mason-lspconfig.nvim`, `mason-tool-installer.nvim`, and `LuaSnip` out of `%LOCALAPPDATA%\nvim-data\site\pack\core\opt` before first launch with the new lockfile. `vim.pack` records plugin folders it finds there.
 
 At startup, `vim.pack` can download the plugins from GitHub. For an offline laptop, copy the plugin folders from a matching Windows setup into `%LOCALAPPDATA%\nvim-data\site\pack\core\opt`, including each plugin's `.git` folder. Use Windows builds for tools on `PATH` and any prebuilt parsers (`nvim-data\site\parser`, with `site\queries` if present).
 
