@@ -429,6 +429,30 @@ do
     end,
   }
 
+  vim.keymap.set('n', '<leader>hh', function()
+    if vim.fn.executable 'lazygit' == 0 then
+      vim.notify('LazyGit is not on PATH.', vim.log.levels.WARN)
+      return
+    end
+
+    local root = vim.fs.root(0, '.git') or vim.fs.root(vim.fn.getcwd(), '.git')
+    if not root then
+      vim.notify('Open a Git repository to use LazyGit.', vim.log.levels.WARN)
+      return
+    end
+
+    vim.cmd.tabnew()
+    local buf = vim.api.nvim_get_current_buf()
+    local job = vim.fn.jobstart({ 'lazygit' }, {
+      cwd = root,
+      term = true,
+      on_exit = vim.schedule_wrap(function(_, code)
+        if code == 0 and vim.api.nvim_buf_is_valid(buf) then vim.api.nvim_buf_delete(buf, { force = true }) end
+      end),
+    })
+    if job > 0 then vim.cmd.startinsert() end
+  end, { desc = 'Open LazyGit' })
+
   -- Useful plugin to show you pending keybinds.
   vim.pack.add { gh 'folke/which-key.nvim' }
   require('which-key').setup {
@@ -487,21 +511,22 @@ do
   -- - sr)'  - [S]urround [R]eplace [)] [']
   require('mini.surround').setup()
 
-  -- Simple and easy statusline.
-  --  You could remove this setup call if you don't like it,
-  --  and try some other statusline plugin
+  -- Keep the status line focused on the current file.
   local statusline = require 'mini.statusline'
-  -- Set `use_icons` to true if you have a Nerd Font
-  statusline.setup { use_icons = vim.g.have_nerd_font }
-
-  -- You can configure sections in the statusline by overriding their
-  -- default behavior. For example, here we set the section for
-  -- cursor location to LINE:COLUMN
-  ---@diagnostic disable-next-line: duplicate-set-field
-  statusline.section_location = function() return '%2l:%-2v' end
-
-  -- ... and there is more!
-  --  Check out: https://github.com/nvim-mini/mini.nvim
+  statusline.setup {
+    use_icons = vim.g.have_nerd_font,
+    content = {
+      active = function()
+        local mode, mode_hl = statusline.section_mode { trunc_width = 40 }
+        return statusline.combine_groups {
+          { hl = mode_hl, strings = { mode } },
+          { hl = 'MiniStatuslineFilename', strings = { '%t%m%r' } },
+          '%=',
+          { hl = mode_hl, strings = { '%l:%v' } },
+        }
+      end,
+    },
+  }
 end
 
 -- ============================================================
@@ -567,13 +592,6 @@ do
   -- See `:help telescope.builtin`
   local builtin = require 'telescope.builtin'
 
-  vim.keymap.set('n', '<leader>hh', function()
-    builtin.git_status {
-      path_display = {},
-      layout_config = { width = 0.98 },
-      previewer = false,
-    }
-  end, { desc = '[G]it [S]tatus' })
   vim.keymap.set('n', '<leader>sh', builtin.help_tags, { desc = '[S]earch [H]elp' })
   vim.keymap.set('n', '<leader>sk', builtin.keymaps, { desc = '[S]earch [K]eymaps' })
   vim.keymap.set('n', '<leader>sf', builtin.find_files, { desc = '[S]earch [F]iles' })

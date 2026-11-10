@@ -165,6 +165,19 @@ The JavaScript parser covers `.jsx`, and the TypeScript checkout supplies both `
 
 Copy this repo's `nvim/init.lua` to `%LOCALAPPDATA%\nvim\init.lua`, preserving any laptop-specific edits. It automatically uses the local checkouts it finds on Windows. Restart Neovim with the portable build tools on `PATH` and, if needed, retry the affected parser with a command like `:TSInstall bash`.
 
+### Open LazyGit from Neovim
+
+With `lazygit` on `PATH`, open Neovim in a Git repository and press **Space h h** to open LazyGit in a terminal tab. In the **Files** panel, press `/` to filter changed files, use `j` and `k` to move, and press `e` to edit the selected file.
+
+To make `e` open Neovim on Windows, run `lazygit --print-config-dir` in CMD and add this to `config.yml` in that folder. If the file already has an `os` section, add `editPreset` under it.
+
+```yaml
+os:
+  editPreset: nvim
+```
+
+Restart LazyGit after saving the setting. When you're done editing, `:wq` returns you to LazyGit. Press `q` in LazyGit to return to the original Neovim tab. See the [LazyGit editor settings](https://github.com/jesseduffield/lazygit/blob/master/docs/Config.md#configuring-file-editing).
+
 ### Open Neovim by typing `vim`
 
 Save the following as `vim.cmd` in a folder on your user `PATH`, such as `%USERPROFILE%\.local\bin`. Make sure `nvim` is also on `PATH`.
