@@ -39,6 +39,20 @@ If Tree-sitter picks the wrong compiler, run `set "CC=gcc"` in that CMD window b
 
 If you can't run the portable build tools, use prebuilt Windows parsers or leave the local parser checkout folders absent. Run `:checkhealth` after starting Neovim.
 
+### Build Telescope's native sorter if Make hangs
+
+If `make` opens a nested Command Prompt during `cmd /C mkdir build`, type `exit` to leave that prompt. Close Neovim, then open a regular CMD window. With the plugin already installed, build its DLL directly:
+
+```cmd
+set "PATH=%USERPROFILE%\.local\w64devkit\bin;%PATH%"
+pushd "%LOCALAPPDATA%\nvim-data\site\pack\core\opt\telescope-fzf-native.nvim"
+if not exist build mkdir build
+gcc -O3 -Wall -std=gnu99 -shared src\fzf.c -o build\libfzf.dll
+popd
+```
+
+Launch Neovim from that CMD window and run `:checkhealth telescope`. In the `fzf` section, look for `lib working as expected` and both sorters marked `correctly configured`. Treesitter also compiles native code, but its local parser builds use `tree-sitter.exe` and GCC directly.
+
 ### Set up Lua Language Server without PowerShell
 
 Windows uses manually installed language servers. Download the ZIP for your laptop's architecture from [Lua Language Server releases](https://github.com/LuaLS/lua-language-server/releases). Use **Extract All** in File Explorer to extract it to `%USERPROFILE%\.local\lua-language-server`. Keep the extracted files together.

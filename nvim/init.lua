@@ -568,7 +568,11 @@ do
   local builtin = require 'telescope.builtin'
 
   vim.keymap.set('n', '<leader>hh', function()
-    builtin.git_status { path_display = { 'filename_first' }, previewer = false }
+    builtin.git_status {
+      path_display = {},
+      layout_config = { width = 0.98 },
+      previewer = false,
+    }
   end, { desc = '[G]it [S]tatus' })
   vim.keymap.set('n', '<leader>sh', builtin.help_tags, { desc = '[S]earch [H]elp' })
   vim.keymap.set('n', '<leader>sk', builtin.keymaps, { desc = '[S]earch [K]eymaps' })
