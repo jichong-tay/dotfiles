@@ -260,7 +260,7 @@ end
 local is_windows = vim.fn.has 'win32' == 1
 local basic_treesitter_parsers = {
   'bash', 'c', 'diff', 'html', 'lua', 'luadoc', 'markdown', 'markdown_inline', 'query', 'vim', 'vimdoc',
-  'go', 'gomod', 'gosum', 'gotmpl', 'gowork',
+  'go', 'gomod', 'gosum', 'gotmpl', 'gowork', 'python',
 }
 local windows_parser_paths = {}
 do

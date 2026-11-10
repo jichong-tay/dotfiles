@@ -91,6 +91,8 @@ git clone https://github.com/tree-sitter-grammars/tree-sitter-query.git "%USERPR
 git -C "%USERPROFILE%\.local\parsers\query" checkout 8e9e223812ff30854fbc912adbec696ba5f0e023
 git clone https://github.com/tree-sitter-grammars/tree-sitter-vim.git "%USERPROFILE%\.local\parsers\vim"
 git -C "%USERPROFILE%\.local\parsers\vim" checkout 039c8d0aa1deae00ddeb0374dd70bcc0ec56938d
+git clone https://github.com/tree-sitter/tree-sitter-python.git "%USERPROFILE%\.local\parsers\python"
+git -C "%USERPROFILE%\.local\parsers\python" checkout v0.25.0
 ```
 
 The Markdown checkout supplies both `markdown` and `markdown_inline`. Retry both with `:TSInstall markdown markdown_inline` if needed.
