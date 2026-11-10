@@ -260,14 +260,16 @@ end
 local is_windows = vim.fn.has 'win32' == 1
 local basic_treesitter_parsers = {
   'bash', 'c', 'diff', 'html', 'lua', 'luadoc', 'markdown', 'markdown_inline', 'query', 'vim', 'vimdoc',
-  'go', 'gomod', 'gosum', 'gotmpl', 'gowork', 'python',
+  'go', 'gomod', 'gosum', 'gotmpl', 'gowork', 'python', 'jinja', 'jinja_inline',
+  'json', 'yaml', 'toml', 'sql', 'javascript', 'typescript', 'tsx', 'css',
 }
 local windows_parser_paths = {}
 do
   -- The work laptop's curl fails Schannel revocation checks. Only install from local checkouts on Windows.
   if is_windows then
+    local shared_checkouts = { jinja_inline = 'jinja', markdown_inline = 'markdown', tsx = 'typescript' }
     for _, name in ipairs(basic_treesitter_parsers) do
-      local checkout = name == 'markdown_inline' and 'markdown' or name
+      local checkout = shared_checkouts[name] or name
       local path = vim.env.USERPROFILE .. '/.local/parsers/' .. checkout
       if vim.fn.isdirectory(path) == 1 then windows_parser_paths[name] = path end
     end
@@ -762,6 +764,14 @@ do
     gopls = { settings = { gopls = { templateExtensions = { 'gotmpl', 'gotmpls' } } } },
     ty = {}, -- Python type checking and navigation
     ruff = {}, -- Python linting and formatting
+    tailwindcss = {
+      -- Launch the Windows user-local npm install directly through Node.
+      cmd = is_windows and {
+        'node',
+        vim.env.USERPROFILE .. '/.local/tailwindcss/node_modules/@tailwindcss/language-server/bin/tailwindcss-language-server',
+        '--stdio',
+      } or nil,
+    },
     -- tsc = {},
     --
     -- Some languages (like rust) have entire language plugins that can be useful:
@@ -806,38 +816,26 @@ do
     },
   }
 
-  vim.pack.add {
-    gh 'neovim/nvim-lspconfig',
-    gh 'mason-org/mason.nvim',
-    gh 'mason-org/mason-lspconfig.nvim',
-    gh 'WhoIsSethDaniel/mason-tool-installer.nvim',
-  }
+  vim.pack.add { gh 'neovim/nvim-lspconfig' }
 
-  -- Automatically install LSPs and related tools to stdpath for Neovim
-  require('mason').setup {}
+  -- The Windows laptop uses manually installed language tools on PATH.
+  if not is_windows then
+    vim.pack.add {
+      gh 'mason-org/mason.nvim',
+      gh 'mason-org/mason-lspconfig.nvim',
+      gh 'WhoIsSethDaniel/mason-tool-installer.nvim',
+    }
 
-  -- Translates between nvim-lspconfig server names and mason.nvim package names (e.g. lua_ls <-> lua-language-server)
-  require('mason-lspconfig').setup {
-    automatic_enable = false, -- Change this to true if you want to automatically enable servers that are installed manually (e.g. via :Mason / :MasonInstall)
-  }
+    require('mason').setup {}
+    -- The loop below enables language servers on both platforms.
+    require('mason-lspconfig').setup { automatic_enable = false }
 
-  -- Ensure the servers and tools above are installed
-  --
-  -- To check the current status of installed tools and/or manually install
-  -- other tools, you can run
-  --    :Mason
-  --
-  -- You can press `g?` for help in this menu.
-  local ensure_installed = vim.tbl_keys(servers or {})
-  vim.list_extend(ensure_installed, {
-    -- You can add other tools here that you want Mason to install
-  })
-
-  require('mason-tool-installer').setup {
-    ensure_installed = ensure_installed,
-    -- Mason's Windows ZIP installer requires PowerShell, which is unavailable on the work laptop.
-    run_on_start = vim.fn.has 'win32' == 0,
-  }
+    local ensure_installed = vim.tbl_keys(servers)
+    vim.list_extend(ensure_installed, {
+      -- You can add other tools here that you want Mason to install.
+    })
+    require('mason-tool-installer').setup { ensure_installed = ensure_installed }
+  end
 
   for name, server in pairs(servers) do
     vim.lsp.config(name, server)
@@ -975,7 +973,7 @@ do
   --
   --  See `:help nvim-treesitter-intro`
 
-  vim.filetype.add { extension = { gotmpl = 'gotmpl', gotmpls = 'gotmpl' } }
+  vim.filetype.add { extension = { gotmpl = 'gotmpl', gotmpls = 'gotmpl', jinja2 = 'jinja', j2 = 'jinja' } }
 
   -- NOTE: You can also specify a branch or a specific commit
   vim.pack.add { { src = gh 'nvim-treesitter/nvim-treesitter', version = 'main' } }

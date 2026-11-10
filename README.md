@@ -15,9 +15,11 @@ The `--delete` option removes files from `~/.config/nvim` that are not in the re
 
 ## Set up Neovim on Windows
 
-Use Neovim 0.12 or newer and Git. Close Neovim, back up any existing `%LOCALAPPDATA%\nvim` folder, then use File Explorer to paste `init.lua`, `lua\`, and `nvim-pack-lock.json` directly into a new `%LOCALAPPDATA%\nvim` folder.
+Use Neovim 0.12 or newer and Git. Close Neovim, back up any existing `%LOCALAPPDATA%\nvim` folder, then use File Explorer to paste `init.lua`, `lua\`, and `nvim-pack-lock.windows.json` into `%LOCALAPPDATA%\nvim`. Rename the copied lockfile to **`nvim-pack-lock.json`** before starting Neovim. The Windows lockfile omits Mason and its two companion plugins.
 
-At startup, `vim.pack` can download the plugins from GitHub. For an offline laptop, copy the plugin folders from a Windows PC with the same Neovim version, CPU architecture, and lockfile into `%LOCALAPPDATA%\nvim-data\site\pack\core\opt`. Include each plugin's `.git` folder. For preinstalled tools or parsers, use Windows builds from that setup (`nvim-data\mason` and `nvim-data\site\parser`, with `site\queries` if present).
+If you've already used Mason on the laptop, move `mason.nvim`, `mason-lspconfig.nvim`, and `mason-tool-installer.nvim` out of `%LOCALAPPDATA%\nvim-data\site\pack\core\opt` before first launch with the new lockfile. `vim.pack` records plugin folders it finds there.
+
+At startup, `vim.pack` can download the plugins from GitHub. For an offline laptop, copy the plugin folders from a matching Windows setup into `%LOCALAPPDATA%\nvim-data\site\pack\core\opt`, including each plugin's `.git` folder. Use Windows builds for tools on `PATH` and any prebuilt parsers (`nvim-data\site\parser`, with `site\queries` if present).
 
 ### Portable build tools
 
@@ -39,7 +41,7 @@ If you can't run the portable build tools, use prebuilt Windows parsers or leave
 
 ### Set up Lua Language Server without PowerShell
 
-This config skips automatic Mason installs on Windows because Mason's ZIP installer calls PowerShell. Download the ZIP for your laptop's architecture from [Lua Language Server releases](https://github.com/LuaLS/lua-language-server/releases). Use **Extract All** in File Explorer to extract it to `%USERPROFILE%\.local\lua-language-server`. Keep the extracted files together.
+Windows uses manually installed language servers. Download the ZIP for your laptop's architecture from [Lua Language Server releases](https://github.com/LuaLS/lua-language-server/releases). Use **Extract All** in File Explorer to extract it to `%USERPROFILE%\.local\lua-language-server`. Keep the extracted files together.
 
 In the same CMD window you use to launch Neovim, add the folder containing `lua-language-server.exe` to `PATH`:
 
@@ -49,7 +51,7 @@ where lua-language-server
 nvim "%LOCALAPPDATA%\nvim\init.lua"
 ```
 
-If your ZIP extracted into an extra subfolder, adjust the `PATH` entry to match. In Neovim, run `:checkhealth vim.lsp` and look for `lua_ls` under active clients. Mason may still show it as uninstalled because you installed it manually.
+If your ZIP extracted into an extra subfolder, adjust the `PATH` entry to match. In Neovim, run `:checkhealth vim.lsp` and look for `lua_ls` under active clients.
 
 ### Set up Go without Mason
 
@@ -63,6 +65,16 @@ gopls version
 ```
 
 Launch Neovim from that CMD window, open a `.go` file in your project, and check for `gopls` in `:checkhealth vim.lsp`. The config also recognises `.gotmpl` and `.gotmpls` as Go templates.
+
+### Set up Tailwind CSS without Mason
+
+With Node.js and npm on `PATH`, install the [Tailwind CSS language server](https://github.com/tailwindlabs/tailwindcss-intellisense/tree/main/packages/tailwindcss-language-server) into your user folder from CMD:
+
+```cmd
+npm.cmd install --global --prefix "%USERPROFILE%\.local\tailwindcss" @tailwindcss/language-server
+```
+
+The Windows config runs this copy through `node`. Open an HTML, JSX, TSX, or CSS file in a project that uses Tailwind and check for `tailwindcss` under **Active Clients** in `:checkhealth vim.lsp`.
 
 ### Install Treesitter parsers from local Git checkouts
 
@@ -93,9 +105,13 @@ git clone https://github.com/tree-sitter-grammars/tree-sitter-vim.git "%USERPROF
 git -C "%USERPROFILE%\.local\parsers\vim" checkout 039c8d0aa1deae00ddeb0374dd70bcc0ec56938d
 git clone https://github.com/tree-sitter/tree-sitter-python.git "%USERPROFILE%\.local\parsers\python"
 git -C "%USERPROFILE%\.local\parsers\python" checkout v0.25.0
+git clone https://github.com/cathaysia/tree-sitter-jinja.git "%USERPROFILE%\.local\parsers\jinja"
+git -C "%USERPROFILE%\.local\parsers\jinja" checkout c213d3745ccdcaaa858869181c7b1bf9557a025f
 ```
 
 The Markdown checkout supplies both `markdown` and `markdown_inline`. Retry both with `:TSInstall markdown markdown_inline` if needed.
+
+The Jinja checkout supplies both `jinja` and `jinja_inline` for `.jinja`, `.jinja2`, and `.j2` templates. Retry both with `:TSInstall jinja jinja_inline` if needed.
 
 For Go highlighting on Windows, clone the parsers you need from this list:
 
@@ -111,6 +127,27 @@ git -C "%USERPROFILE%\.local\parsers\gotmpl" checkout 06b2fd2ac32a7be71cdcf925ee
 git clone https://github.com/omertuc/tree-sitter-go-work.git "%USERPROFILE%\.local\parsers\gowork"
 git -C "%USERPROFILE%\.local\parsers\gowork" checkout 949a8a470559543857a62102c84700d291fc984c
 ```
+
+For config files, SQL, and web development, clone the parsers you need:
+
+```cmd
+git clone https://github.com/tree-sitter/tree-sitter-json.git "%USERPROFILE%\.local\parsers\json"
+git -C "%USERPROFILE%\.local\parsers\json" checkout 254c42a6476413b776221e03982ac8ae159eeb72
+git clone https://github.com/tree-sitter-grammars/tree-sitter-yaml.git "%USERPROFILE%\.local\parsers\yaml"
+git -C "%USERPROFILE%\.local\parsers\yaml" checkout a1c4812a73ec5e089de8e441fdea3a921e8d5079
+git clone https://github.com/tree-sitter-grammars/tree-sitter-toml.git "%USERPROFILE%\.local\parsers\toml"
+git -C "%USERPROFILE%\.local\parsers\toml" checkout 64b56832c2cffe41758f28e05c756a3a98d16f41
+git clone --branch gh-pages https://github.com/derekstride/tree-sitter-sql.git "%USERPROFILE%\.local\parsers\sql"
+git -C "%USERPROFILE%\.local\parsers\sql" checkout e038788e5d4daba82dea35676bf49a216629e141
+git clone https://github.com/tree-sitter/tree-sitter-javascript.git "%USERPROFILE%\.local\parsers\javascript"
+git -C "%USERPROFILE%\.local\parsers\javascript" checkout 58404d8cf191d69f2674a8fd507bd5776f46cb11
+git clone https://github.com/tree-sitter/tree-sitter-typescript.git "%USERPROFILE%\.local\parsers\typescript"
+git -C "%USERPROFILE%\.local\parsers\typescript" checkout 75b3874edb2dc714fb1fd77a32013d0f8699989f
+git clone https://github.com/tree-sitter/tree-sitter-css.git "%USERPROFILE%\.local\parsers\css"
+git -C "%USERPROFILE%\.local\parsers\css" checkout dda5cfc5722c429eaba1c910ca32c2c0c5bb1a3f
+```
+
+The JavaScript parser covers `.jsx`, and the TypeScript checkout supplies both `typescript` and `tsx`.
 
 Copy this repo's `nvim/init.lua` to `%LOCALAPPDATA%\nvim\init.lua`, preserving any laptop-specific edits. It automatically uses the local checkouts it finds on Windows. Restart Neovim with the portable build tools on `PATH` and, if needed, retry the affected parser with a command like `:TSInstall bash`.
 
