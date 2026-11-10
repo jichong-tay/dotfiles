@@ -39,6 +39,38 @@ If Tree-sitter picks the wrong compiler, run `set "CC=gcc"` in that CMD window b
 
 If you can't run the portable build tools, disable the `SECTION 9: TREESITTER` block and the `nvim-treesitter` build hook in the laptop's `init.lua`. Run `:checkhealth` after starting Neovim.
 
+### Install `vimdoc` and `diff` from local Git checkouts
+
+If `[nvim-treesitter/install/vimdoc]` or `[nvim-treesitter/install/diff]` reports `CRYPT_E_NO_REVOCATION_CHECK` but Git can reach GitHub, clone the affected parsers in CMD. These revisions match this repo's pinned `nvim-treesitter` version. Skip the clone command for any parser you already cloned.
+
+```cmd
+git clone https://github.com/neovim/tree-sitter-vimdoc.git "%USERPROFILE%\.local\parsers\vimdoc"
+git -C "%USERPROFILE%\.local\parsers\vimdoc" checkout a13c5c7e09aa2ec2f724ac5c0fdb91a4a7eeabba
+git clone https://github.com/tree-sitter-grammars/tree-sitter-diff.git "%USERPROFILE%\.local\parsers\diff"
+git -C "%USERPROFILE%\.local\parsers\diff" checkout ada384ac7bfc1307f32de474620120add29998fb
+```
+
+Add this to the laptop's `init.lua` before `SECTION 3: PLUGIN MANAGER INTRO` so the override is registered before any plugin installation runs.
+
+```lua
+if vim.fn.has 'win32' == 1 then
+  vim.api.nvim_create_autocmd('User', {
+    pattern = 'TSUpdate',
+    callback = function()
+      local parsers = require 'nvim-treesitter.parsers'
+      for _, name in ipairs { 'vimdoc', 'diff' } do
+        local path = vim.env.USERPROFILE .. '/.local/parsers/' .. name
+        if vim.fn.isdirectory(path) == 1 then
+          parsers[name].install_info.path = path
+        end
+      end
+    end,
+  })
+end
+```
+
+Restart Neovim with the portable build tools on `PATH`. If needed, run `:TSInstall diff` or `:TSInstall vimdoc`. The override uses local checkouts for the folders it finds.
+
 ### Open Neovim by typing `vim`
 
 Save the following as `vim.cmd` in a folder on your user `PATH`, such as `%USERPROFILE%\.local\bin`. Make sure `nvim` is also on `PATH`.
