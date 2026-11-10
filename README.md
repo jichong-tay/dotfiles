@@ -51,6 +51,19 @@ nvim "%LOCALAPPDATA%\nvim\init.lua"
 
 If your ZIP extracted into an extra subfolder, adjust the `PATH` entry to match. In Neovim, run `:checkhealth vim.lsp` and look for `lua_ls` under active clients. Mason may still show it as uninstalled because you installed it manually.
 
+### Set up Go without Mason
+
+With `go.exe` on `PATH`, install `gopls` from CMD using the [Go project's installation instructions](https://go.dev/gopls/#installation):
+
+```cmd
+set "GOBIN=%USERPROFILE%\.local\bin"
+go install golang.org/x/tools/gopls@latest
+set "PATH=%GOBIN%;%PATH%"
+gopls version
+```
+
+Launch Neovim from that CMD window, open a `.go` file in your project, and check for `gopls` in `:checkhealth vim.lsp`. The config also recognises `.gotmpl` and `.gotmpls` as Go templates.
+
 ### Install Treesitter parsers from local Git checkouts
 
 On the work laptop, `curl` fails with the Schannel error `CRYPT_E_NO_REVOCATION_CHECK`. On Windows, this config only auto-installs parsers from local Git checkouts and skips the automatic `:TSUpdate` hook. Installed and bundled parsers are still usable. Run `:TSInstall` only for parsers with a local checkout, since explicit install or update commands can still download files.
@@ -81,6 +94,21 @@ git -C "%USERPROFILE%\.local\parsers\vim" checkout 039c8d0aa1deae00ddeb0374dd70b
 ```
 
 The Markdown checkout supplies both `markdown` and `markdown_inline`. Retry both with `:TSInstall markdown markdown_inline` if needed.
+
+For Go highlighting on Windows, clone the parsers you need from this list:
+
+```cmd
+git clone https://github.com/tree-sitter/tree-sitter-go.git "%USERPROFILE%\.local\parsers\go"
+git -C "%USERPROFILE%\.local\parsers\go" checkout 2346a3ab1bb3857b48b29d779a1ef9799a248cd7
+git clone https://github.com/camdencheek/tree-sitter-go-mod.git "%USERPROFILE%\.local\parsers\gomod"
+git -C "%USERPROFILE%\.local\parsers\gomod" checkout 2e886870578eeba1927a2dc4bd2e2b3f598c5f9a
+git clone https://github.com/tree-sitter-grammars/tree-sitter-go-sum.git "%USERPROFILE%\.local\parsers\gosum"
+git -C "%USERPROFILE%\.local\parsers\gosum" checkout 27816eb6b7315746ae9fcf711e4e1396dc1cf237
+git clone https://github.com/ngalaiko/tree-sitter-go-template.git "%USERPROFILE%\.local\parsers\gotmpl"
+git -C "%USERPROFILE%\.local\parsers\gotmpl" checkout 06b2fd2ac32a7be71cdcf925eeeb868a68e2acde
+git clone https://github.com/omertuc/tree-sitter-go-work.git "%USERPROFILE%\.local\parsers\gowork"
+git -C "%USERPROFILE%\.local\parsers\gowork" checkout 949a8a470559543857a62102c84700d291fc984c
+```
 
 Copy this repo's `nvim/init.lua` to `%LOCALAPPDATA%\nvim\init.lua`, preserving any laptop-specific edits. It automatically uses the local checkouts it finds on Windows. Restart Neovim with the portable build tools on `PATH` and, if needed, retry the affected parser with a command like `:TSInstall bash`.
 

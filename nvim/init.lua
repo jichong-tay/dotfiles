@@ -258,7 +258,10 @@ end
 -- vim.pack intro, build hooks
 -- ============================================================
 local is_windows = vim.fn.has 'win32' == 1
-local basic_treesitter_parsers = { 'bash', 'c', 'diff', 'html', 'lua', 'luadoc', 'markdown', 'markdown_inline', 'query', 'vim', 'vimdoc' }
+local basic_treesitter_parsers = {
+  'bash', 'c', 'diff', 'html', 'lua', 'luadoc', 'markdown', 'markdown_inline', 'query', 'vim', 'vimdoc',
+  'go', 'gomod', 'gosum', 'gotmpl', 'gowork',
+}
 local windows_parser_paths = {}
 do
   -- The work laptop's curl fails Schannel revocation checks. Only install from local checkouts on Windows.
@@ -756,8 +759,9 @@ do
   ---@type table<string, vim.lsp.Config>
   local servers = {
     -- clangd = {},
-    -- gopls = {},
-    -- pyright = {},
+    gopls = { settings = { gopls = { templateExtensions = { 'gotmpl', 'gotmpls' } } } },
+    ty = {}, -- Python type checking and navigation
+    ruff = {}, -- Python linting and formatting
     -- tsc = {},
     --
     -- Some languages (like rust) have entire language plugins that can be useful:
@@ -766,7 +770,8 @@ do
     -- But for many setups, the LSP (`rust_analyzer`) will work just fine
     -- rust_analyzer = {},
 
-    stylua = {}, -- Used to format Lua code
+    -- Mason does not install tools automatically on Windows. Enable StyLua there if it is on PATH.
+    stylua = (not is_windows or vim.fn.executable 'stylua' == 1) and {} or nil,
 
     -- Special Lua Config, as recommended by neovim help docs
     lua_ls = {
@@ -969,6 +974,8 @@ do
   --  Used to highlight, edit, and navigate code
   --
   --  See `:help nvim-treesitter-intro`
+
+  vim.filetype.add { extension = { gotmpl = 'gotmpl', gotmpls = 'gotmpl' } }
 
   -- NOTE: You can also specify a branch or a specific commit
   vim.pack.add { { src = gh 'nvim-treesitter/nvim-treesitter', version = 'main' } }
