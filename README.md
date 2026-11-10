@@ -27,8 +27,6 @@ At startup, `vim.pack` can download the plugins from GitHub. For an offline lapt
 
 In a regular CMD window, set the paths and launch Neovim from that same window. This requires no permanent PATH change.
 
-This config skips automatic Mason installs on Windows because Mason's ZIP installer calls PowerShell. Extract tools manually and put their executables on `PATH`, or transfer them from a matching Windows setup. Running `:MasonInstall` for a ZIP package still requires PowerShell.
-
 ```cmd
 set "PATH=%USERPROFILE%\.local\w64devkit\bin;%USERPROFILE%\.local\bin;%PATH%"
 where gcc make tree-sitter
@@ -38,6 +36,20 @@ nvim
 If Tree-sitter picks the wrong compiler, run `set "CC=gcc"` in that CMD window before launching Neovim.
 
 If you can't run the portable build tools, use prebuilt Windows parsers or leave the local parser checkout folders absent. Run `:checkhealth` after starting Neovim.
+
+### Set up Lua Language Server without PowerShell
+
+This config skips automatic Mason installs on Windows because Mason's ZIP installer calls PowerShell. Download the ZIP for your laptop's architecture from [Lua Language Server releases](https://github.com/LuaLS/lua-language-server/releases). Use **Extract All** in File Explorer to extract it to `%USERPROFILE%\.local\lua-language-server`. Keep the extracted files together.
+
+In the same CMD window you use to launch Neovim, add the folder containing `lua-language-server.exe` to `PATH`:
+
+```cmd
+set "PATH=%USERPROFILE%\.local\lua-language-server\bin;%PATH%"
+where lua-language-server
+nvim "%LOCALAPPDATA%\nvim\init.lua"
+```
+
+If your ZIP extracted into an extra subfolder, adjust the `PATH` entry to match. In Neovim, run `:checkhealth vim.lsp` and look for `lua_ls` under active clients. Mason may still show it as uninstalled because you installed it manually.
 
 ### Install Treesitter parsers from local Git checkouts
 
