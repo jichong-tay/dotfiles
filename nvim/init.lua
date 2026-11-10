@@ -441,8 +441,21 @@ do
       return
     end
 
-    vim.cmd.tabnew()
-    local buf = vim.api.nvim_get_current_buf()
+    local width = math.max(1, math.floor(vim.o.columns * 0.9))
+    local height = math.max(1, math.floor((vim.o.lines - vim.o.cmdheight) * 0.85))
+    local buf = vim.api.nvim_create_buf(false, true)
+    vim.bo[buf].bufhidden = 'wipe'
+    vim.api.nvim_open_win(buf, true, {
+      relative = 'editor',
+      width = width,
+      height = height,
+      row = math.max(0, math.floor((vim.o.lines - vim.o.cmdheight - height - 2) / 2)),
+      col = math.max(0, math.floor((vim.o.columns - width - 2) / 2)),
+      border = 'single',
+      style = 'minimal',
+      title = ' LazyGit ',
+      title_pos = 'center',
+    })
     local job = vim.fn.jobstart({ 'lazygit' }, {
       cwd = root,
       term = true,

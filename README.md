@@ -167,7 +167,7 @@ Copy this repo's `nvim/init.lua` to `%LOCALAPPDATA%\nvim\init.lua`, preserving a
 
 ### Open LazyGit from Neovim
 
-With `lazygit` on `PATH`, open Neovim in a Git repository and press **Space h h** to open LazyGit in a terminal tab. In the **Files** panel, press `/` to filter changed files, use `j` and `k` to move, and press `e` to edit the selected file.
+With `lazygit` on `PATH`, open Neovim in a Git repository and press **Space h h** to open the LazyGit popup. In the **Files** panel, press `/` to filter changed files, use `j` and `k` to move, and press `e` to edit the selected file.
 
 To make `e` open Neovim on Windows, run `lazygit --print-config-dir` in CMD and add this to `config.yml` in that folder. If the file already has an `os` section, add `editPreset` under it.
 
@@ -176,7 +176,7 @@ os:
   editPreset: nvim
 ```
 
-Restart LazyGit after saving the setting. When you're done editing, `:wq` returns you to LazyGit. Press `q` in LazyGit to return to the original Neovim tab. See the [LazyGit editor settings](https://github.com/jesseduffield/lazygit/blob/master/docs/Config.md#configuring-file-editing).
+Restart LazyGit after saving the setting. When you're done editing, `:wq` returns you to LazyGit. Press `q` in LazyGit to close the popup and return to your file. See the [LazyGit editor settings](https://github.com/jesseduffield/lazygit/blob/master/docs/Config.md#configuring-file-editing).
 
 ### Open Neovim by typing `vim`
 
