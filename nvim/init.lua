@@ -258,6 +258,22 @@ end
 -- vim.pack intro, build hooks
 -- ============================================================
 do
+  -- Use local Treesitter checkouts on Windows when curl cannot download these parsers.
+  if vim.fn.has 'win32' == 1 then
+    vim.api.nvim_create_autocmd('User', {
+      pattern = 'TSUpdate',
+      callback = function()
+        local parsers = require 'nvim-treesitter.parsers'
+        for _, name in ipairs { 'vimdoc', 'diff' } do
+          local path = vim.env.USERPROFILE .. '/.local/parsers/' .. name
+          if vim.fn.isdirectory(path) == 1 then
+            parsers[name].install_info.path = path
+          end
+        end
+      end,
+    })
+  end
+
   -- [[ Intro to `vim.pack` ]]
   -- `vim.pack` is a new plugin manager built into Neovim,
   --  which provides a Lua interface for installing and managing plugins.

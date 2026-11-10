@@ -50,26 +50,7 @@ git clone https://github.com/tree-sitter-grammars/tree-sitter-diff.git "%USERPRO
 git -C "%USERPROFILE%\.local\parsers\diff" checkout ada384ac7bfc1307f32de474620120add29998fb
 ```
 
-Add this to the laptop's `init.lua` before `SECTION 3: PLUGIN MANAGER INTRO` so the override is registered before any plugin installation runs.
-
-```lua
-if vim.fn.has 'win32' == 1 then
-  vim.api.nvim_create_autocmd('User', {
-    pattern = 'TSUpdate',
-    callback = function()
-      local parsers = require 'nvim-treesitter.parsers'
-      for _, name in ipairs { 'vimdoc', 'diff' } do
-        local path = vim.env.USERPROFILE .. '/.local/parsers/' .. name
-        if vim.fn.isdirectory(path) == 1 then
-          parsers[name].install_info.path = path
-        end
-      end
-    end,
-  })
-end
-```
-
-Restart Neovim with the portable build tools on `PATH`. If needed, run `:TSInstall diff` or `:TSInstall vimdoc`. The override uses local checkouts for the folders it finds.
+Copy this repo's `nvim/init.lua` to `%LOCALAPPDATA%\nvim\init.lua`, preserving any laptop-specific edits. It automatically uses the local checkouts it finds on Windows. Restart Neovim with the portable build tools on `PATH` and, if needed, run `:TSInstall diff` or `:TSInstall vimdoc`.
 
 ### Open Neovim by typing `vim`
 
