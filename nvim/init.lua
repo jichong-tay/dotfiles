@@ -429,7 +429,15 @@ do
     end,
   }
 
-  vim.keymap.set('n', '<leader>hh', function()
+  local lazygit_buffers = {}
+  local function toggle_lazygit()
+    local editor_win = vim.api.nvim_get_current_win()
+    if vim.w[editor_win].dotfiles_lazygit then
+      vim.cmd.stopinsert()
+      vim.api.nvim_win_close(editor_win, true)
+      return
+    end
+
     if vim.fn.executable 'lazygit' == 0 then
       vim.notify('LazyGit is not on PATH.', vim.log.levels.WARN)
       return
@@ -443,8 +451,12 @@ do
 
     local width = math.max(1, math.floor(vim.o.columns * 0.9))
     local height = math.max(1, math.floor((vim.o.lines - vim.o.cmdheight) * 0.85))
-    local buf = vim.api.nvim_create_buf(false, true)
-    vim.bo[buf].bufhidden = 'wipe'
+    local buf = lazygit_buffers[root]
+    local start_job = not buf or not vim.api.nvim_buf_is_valid(buf)
+    if start_job then
+      buf = vim.api.nvim_create_buf(false, true)
+      vim.bo[buf].bufhidden = 'hide'
+    end
     local popup = vim.api.nvim_open_win(buf, true, {
       relative = 'editor',
       width = width,
@@ -456,26 +468,51 @@ do
       title = ' LazyGit ',
       title_pos = 'center',
     })
-    -- A remote edit can enter an existing file buffer without firing WinLeave for the popup.
+    vim.w[popup].dotfiles_lazygit = true
+    -- A remote edit may replace the terminal buffer in the popup. Move the file to the editor window.
     local close_on_edit = vim.api.nvim_create_autocmd('BufEnter', {
       callback = vim.schedule_wrap(function()
-        if vim.api.nvim_win_is_valid(popup) and vim.api.nvim_get_current_win() ~= popup then vim.api.nvim_win_close(popup, true) end
+        if not vim.api.nvim_win_is_valid(popup) then return end
+        if vim.api.nvim_get_current_win() == popup then
+          local file_buf = vim.api.nvim_win_get_buf(popup)
+          if file_buf == buf or not vim.api.nvim_win_is_valid(editor_win) then return end
+          vim.api.nvim_win_set_buf(editor_win, file_buf)
+          vim.api.nvim_set_current_win(editor_win)
+        end
+        vim.api.nvim_win_close(popup, true)
       end),
     })
-    vim.api.nvim_create_autocmd('BufWipeout', {
-      buf = buf,
+    vim.api.nvim_create_autocmd('WinClosed', {
+      pattern = tostring(popup),
       once = true,
       callback = function() vim.api.nvim_del_autocmd(close_on_edit) end,
     })
-    local job = vim.fn.jobstart({ 'lazygit' }, {
-      cwd = root,
-      term = true,
-      on_exit = vim.schedule_wrap(function(_, code)
-        if code == 0 and vim.api.nvim_buf_is_valid(buf) then vim.api.nvim_buf_delete(buf, { force = true }) end
-      end),
-    })
-    if job > 0 then vim.cmd.startinsert() end
-  end, { desc = 'Open LazyGit' })
+    if start_job then
+      local job = vim.fn.jobstart({ 'lazygit' }, {
+        cwd = root,
+        term = true,
+        on_exit = vim.schedule_wrap(function(_, code)
+          if lazygit_buffers[root] == buf then lazygit_buffers[root] = nil end
+          if not vim.api.nvim_buf_is_valid(buf) then return end
+          if code == 0 or #vim.fn.win_findbuf(buf) == 0 then
+            vim.api.nvim_buf_delete(buf, { force = true })
+          else
+            vim.bo[buf].bufhidden = 'wipe'
+          end
+        end),
+      })
+      if job <= 0 then
+        vim.api.nvim_win_close(popup, true)
+        vim.api.nvim_buf_delete(buf, { force = true })
+        vim.notify('Could not start LazyGit.', vim.log.levels.WARN)
+        return
+      end
+      lazygit_buffers[root] = buf
+      vim.keymap.set('t', [[<C-\>]], toggle_lazygit, { buf = buf, desc = 'Hide LazyGit' })
+    end
+    vim.cmd.startinsert()
+  end
+  vim.keymap.set('n', [[<C-\>]], toggle_lazygit, { desc = 'Toggle LazyGit' })
 
   -- Useful plugin to show you pending keybinds.
   vim.pack.add { gh 'folke/which-key.nvim' }
