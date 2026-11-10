@@ -806,7 +806,11 @@ do
     -- You can add other tools here that you want Mason to install
   })
 
-  require('mason-tool-installer').setup { ensure_installed = ensure_installed }
+  require('mason-tool-installer').setup {
+    ensure_installed = ensure_installed,
+    -- Mason's Windows ZIP installer requires PowerShell, which is unavailable on the work laptop.
+    run_on_start = vim.fn.has 'win32' == 0,
+  }
 
   for name, server in pairs(servers) do
     vim.lsp.config(name, server)
