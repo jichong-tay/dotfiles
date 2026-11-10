@@ -71,6 +71,10 @@
       "rev": "31e3c38ce9b29781e4422fc0322eb0a21f4e8668",
       "src": "https://github.com/folke/todo-comments.nvim"
     },
+    "toggleterm.nvim": {
+      "rev": "9a88eae817ef395952e08650b3283726786fb5fb",
+      "src": "https://github.com/akinsho/toggleterm.nvim"
+    },
     "vscode.nvim": {
       "rev": "6439ed89d0e10193f07e92268a321d7c6f6e93ee",
       "src": "https://github.com/Mofiqul/vscode.nvim"

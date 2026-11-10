@@ -167,7 +167,7 @@ Copy this repo's `nvim/init.lua` to `%LOCALAPPDATA%\nvim\init.lua`, preserving a
 
 ### Open LazyGit from Neovim
 
-With `lazygit` on `PATH`, open Neovim in a Git repository and press `Ctrl+\` to open the LazyGit popup. In the **Files** panel, press `/` to filter changed files, use `j` and `k` to move, and press `e` to edit the selected file.
+With `lazygit` on `PATH`, open Neovim in a Git repository and press `Ctrl+\` to open the LazyGit popup. Neovim installs ToggleTerm through Git on first startup with this config. In the **Files** panel, press `/` to filter changed files, use `j` and `k` to move, and press `e` to edit the selected file.
 
 Press `Ctrl+\` again to hide the popup and keep LazyGit running. Press `Ctrl+\` from the editor to resume the same session. Press `q` in LazyGit when you want to quit it.
 
