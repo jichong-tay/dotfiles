@@ -445,7 +445,7 @@ do
     local height = math.max(1, math.floor((vim.o.lines - vim.o.cmdheight) * 0.85))
     local buf = vim.api.nvim_create_buf(false, true)
     vim.bo[buf].bufhidden = 'wipe'
-    vim.api.nvim_open_win(buf, true, {
+    local popup = vim.api.nvim_open_win(buf, true, {
       relative = 'editor',
       width = width,
       height = height,
@@ -455,6 +455,17 @@ do
       style = 'minimal',
       title = ' LazyGit ',
       title_pos = 'center',
+    })
+    -- A remote edit can enter an existing file buffer without firing WinLeave for the popup.
+    local close_on_edit = vim.api.nvim_create_autocmd('BufEnter', {
+      callback = vim.schedule_wrap(function()
+        if vim.api.nvim_win_is_valid(popup) and vim.api.nvim_get_current_win() ~= popup then vim.api.nvim_win_close(popup, true) end
+      end),
+    })
+    vim.api.nvim_create_autocmd('BufWipeout', {
+      buf = buf,
+      once = true,
+      callback = function() vim.api.nvim_del_autocmd(close_on_edit) end,
     })
     local job = vim.fn.jobstart({ 'lazygit' }, {
       cwd = root,
@@ -533,7 +544,7 @@ do
         local mode, mode_hl = statusline.section_mode { trunc_width = 40 }
         return statusline.combine_groups {
           { hl = mode_hl, strings = { mode } },
-          { hl = 'MiniStatuslineFilename', strings = { '%t%m%r' } },
+          { hl = 'MiniStatuslineFilename', strings = { "%{empty(expand('%:.')) ? '[No Name]' : expand('%:.')}%m%r" } },
           '%=',
           { hl = mode_hl, strings = { '%l:%v' } },
         }

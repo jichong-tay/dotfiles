@@ -169,14 +169,16 @@ Copy this repo's `nvim/init.lua` to `%LOCALAPPDATA%\nvim\init.lua`, preserving a
 
 With `lazygit` on `PATH`, open Neovim in a Git repository and press **Space h h** to open the LazyGit popup. In the **Files** panel, press `/` to filter changed files, use `j` and `k` to move, and press `e` to edit the selected file.
 
-To make `e` open Neovim on Windows, run `lazygit --print-config-dir` in CMD and add this to `config.yml` in that folder. If the file already has an `os` section, add `editPreset` under it.
+To make `e` open the file in your existing Neovim session on Windows, run `lazygit --print-config-dir` in CMD and edit `config.yml` in that folder. Merge these settings into the existing `os` section and remove the old `editPreset: nvim` line. This setup expects LazyGit to be launched from Neovim with **Space h h**.
 
 ```yaml
 os:
-  editPreset: nvim
+  editInTerminal: false
+  edit: 'nvim --server "%NVIM%" --remote-tab {{filename}}'
+  editAtLine: 'nvim --server "%NVIM%" --remote-tab {{filename}}'
 ```
 
-Restart LazyGit after saving the setting. When you're done editing, `:wq` returns you to LazyGit. Press `q` in LazyGit to close the popup and return to your file. See the [LazyGit editor settings](https://github.com/jesseduffield/lazygit/blob/master/docs/Config.md#configuring-file-editing).
+Restart LazyGit after saving the settings. Pressing `e` opens the selected file in a Neovim tab and dismisses the popup when focus moves to the file. The diff pane's `e` also opens the file without jumping to a specific line. Press **Space h h** to reopen LazyGit. See the [LazyGit editor settings](https://github.com/jesseduffield/lazygit/blob/master/docs/Config.md#configuring-file-editing).
 
 ### Open Neovim by typing `vim`
 
