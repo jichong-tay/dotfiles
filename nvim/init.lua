@@ -508,6 +508,10 @@ do
   -- Use a VS Code-inspired dark palette.
   vim.pack.add { gh 'Mofiqul/vscode.nvim' }
   vim.o.background = 'dark'
+  require('vscode').setup {
+    transparent = true,
+    terminal_colors = false,
+  }
   vim.cmd.colorscheme 'vscode'
 
   -- Highlight todo, notes, etc in comments
