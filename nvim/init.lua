@@ -455,6 +455,10 @@ do
         direction = 'float',
         display_name = 'LazyGit',
         hidden = true,
+        highlights = {
+          NormalFloat = { link = 'NormalFloat' },
+          FloatBorder = { link = 'FloatBorder' },
+        },
         on_create = function(term)
           vim.keymap.set({ 'n', 't' }, lazygit_key, function() term:close() end, { buf = term.bufnr, desc = 'Hide LazyGit' })
         end,
