@@ -511,6 +511,14 @@ do
   require('vscode').setup {
     transparent = true,
     terminal_colors = false,
+    group_overrides = {
+      MiniStatuslineModeNormal = { fg = '#0f172a', bg = '#93c5fd', bold = true },
+      MiniStatuslineModeInsert = { fg = '#0f172a', bg = '#86efac', bold = true },
+      MiniStatuslineModeVisual = { fg = '#0f172a', bg = '#c4b5fd', bold = true },
+      MiniStatuslineModeReplace = { fg = '#0f172a', bg = '#fca5a5', bold = true },
+      MiniStatuslineModeCommand = { fg = '#0f172a', bg = '#fde68a', bold = true },
+      MiniStatuslineModeOther = { fg = '#0f172a', bg = '#a5f3fc', bold = true },
+    },
   }
   vim.cmd.colorscheme 'vscode'
 
@@ -557,7 +565,7 @@ do
     use_icons = vim.g.have_nerd_font,
     content = {
       active = function()
-        local mode, mode_hl = statusline.section_mode { trunc_width = 40 }
+        local mode, mode_hl = statusline.section_mode { trunc_width = math.huge }
         return statusline.combine_groups {
           { hl = mode_hl, strings = { mode } },
           { hl = 'MiniStatuslineFilename', strings = { "%{empty(expand('%:.')) ? '[No Name]' : expand('%:.')}%m%r" } },
