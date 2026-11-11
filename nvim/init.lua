@@ -193,9 +193,9 @@ do
     float = { border = 'rounded', source = 'if_many' },
     underline = { severity = { min = vim.diagnostic.severity.WARN } },
 
-    -- Can switch between these as you prefer
-    virtual_text = true, -- Text shows up at the end of the line
-    virtual_lines = false, -- Text shows up underneath the line, with virtual lines
+    -- Tiny Inline Diagnostic displays and wraps messages beside the code.
+    virtual_text = false,
+    virtual_lines = false,
 
     -- Auto open the float, so you can easily read the errors when jumping with `[d` and `]d`
     jump = {
@@ -529,6 +529,16 @@ do
     },
   }
   vim.cmd.colorscheme 'vscode'
+
+  vim.pack.add { gh 'rachartier/tiny-inline-diagnostic.nvim' }
+  require('tiny-inline-diagnostic').setup {
+    preset = vim.g.have_nerd_font and 'modern' or 'nonerdfont',
+    transparent_bg = true,
+    options = {
+      multilines = { enabled = true },
+      overflow = { mode = 'wrap' },
+    },
+  }
 
   -- Highlight todo, notes, etc in comments
   vim.pack.add { gh 'folke/todo-comments.nvim' }
