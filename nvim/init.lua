@@ -430,64 +430,10 @@ do
   }
 
   vim.pack.add { gh 'akinsho/toggleterm.nvim' }
-  require('toggleterm').setup {}
-  local Terminal = require('toggleterm.terminal').Terminal
-  local lazygit_sessions = {}
-  local lazygit_key = [[<C-\>]]
-
-  vim.keymap.set('n', lazygit_key, function()
-    if vim.fn.executable 'lazygit' == 0 then
-      vim.notify('LazyGit is not on PATH.', vim.log.levels.WARN)
-      return
-    end
-    local root = vim.fs.root(0, '.git') or vim.fs.root(vim.fn.getcwd(), '.git')
-    if not root then
-      vim.notify('Open a Git repository to use LazyGit.', vim.log.levels.WARN)
-      return
-    end
-
-    local editor_win = vim.api.nvim_get_current_win()
-    local session = lazygit_sessions[root]
-    if not session then
-      session = Terminal:new {
-        cmd = 'lazygit',
-        dir = root,
-        direction = 'float',
-        display_name = 'LazyGit',
-        hidden = true,
-        highlights = {
-          NormalFloat = { link = 'NormalFloat' },
-          FloatBorder = { link = 'FloatBorder' },
-        },
-        on_create = function(term)
-          vim.keymap.set({ 'n', 't' }, lazygit_key, function() term:close() end, { buf = term.bufnr, desc = 'Hide LazyGit' })
-        end,
-        on_exit = function(_, _, code)
-          if code ~= 0 then vim.notify(('LazyGit exited with code %s.'):format(code), vim.log.levels.WARN) end
-        end,
-      }
-      lazygit_sessions[root] = session
-    end
-
-    session:toggle()
-    local popup = session.window
-    if not session:is_open() then return end
-    vim.cmd.startinsert()
-    -- If a remote edit opens in the float, display the file in the editor window instead.
-    vim.api.nvim_create_autocmd('BufLeave', {
-      buffer = session.bufnr,
-      once = true,
-      callback = vim.schedule_wrap(function()
-        if not vim.api.nvim_win_is_valid(popup) then return end
-        if vim.api.nvim_get_current_win() == popup then
-          if not vim.api.nvim_win_is_valid(editor_win) then return end
-          vim.api.nvim_win_set_buf(editor_win, vim.api.nvim_win_get_buf(popup))
-          vim.api.nvim_set_current_win(editor_win)
-        end
-        session:close()
-      end),
-    })
-  end, { desc = 'Toggle LazyGit' })
+  require('toggleterm').setup { direction = 'horizontal' }
+  vim.keymap.set('n', '<leader>tt', '<cmd>ToggleTerm<CR>', { desc = '[T]oggle [T]erminal' })
+  vim.keymap.set('n', '<leader>tn', '<cmd>TermNew<CR>', { desc = '[T]erminal [N]ew' })
+  vim.keymap.set('n', '<leader>ts', '<cmd>TermSelect<CR>', { desc = '[T]erminal [S]elect' })
 
   -- Useful plugin to show you pending keybinds.
   vim.pack.add { gh 'folke/which-key.nvim' }
@@ -1110,6 +1056,26 @@ do
       end
     end,
   })
+
+  vim.pack.add { gh 'MeanderingProgrammer/render-markdown.nvim' }
+  local markdown_options = {}
+  if not vim.g.have_nerd_font then
+    -- Render headings, tables, and checkboxes with ordinary characters.
+    markdown_options = {
+      sign = { enabled = false },
+      heading = { icons = {} },
+      code = { language_icon = false },
+      checkbox = {
+        unchecked = { icon = '[ ]' },
+        checked = { icon = '[x]' },
+        custom = { todo = { rendered = '[-]' } },
+      },
+      link = { enabled = false },
+      quote = { enabled = false },
+    }
+  end
+  require('render-markdown').setup(markdown_options)
+  vim.keymap.set('n', '<leader>tm', '<cmd>RenderMarkdown toggle<CR>', { desc = '[T]oggle [M]arkdown rendering' })
 end
 
 -- ============================================================

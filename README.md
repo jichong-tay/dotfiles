@@ -90,6 +90,12 @@ npm.cmd install --global --prefix "%USERPROFILE%\.local\tailwindcss" @tailwindcs
 
 The Windows config runs this copy through `node`. Open an HTML, JSX, TSX, or CSS file in a project that uses Tailwind and check for `tailwindcss` under **Active Clients** in `:checkhealth vim.lsp`.
 
+### Render Markdown
+
+Open a `.md` file to render headings, tables, checkboxes, and code blocks inside Neovim. Press **Space t m** to toggle rendering. The line under the cursor shows its Markdown source for editing. The config uses plain characters when `vim.g.have_nerd_font` is false. Rendering uses the `markdown` and `markdown_inline` parsers, which are already listed in this config. On Windows, use the local checkouts described below or copy compatible prebuilt parsers and their queries from a matching Windows setup.
+
+See the [render-markdown documentation](https://github.com/MeanderingProgrammer/render-markdown.nvim) for rendering options.
+
 ### Install Treesitter parsers from local Git checkouts
 
 On the work laptop, `curl` fails with the Schannel error `CRYPT_E_NO_REVOCATION_CHECK`. On Windows, this config only auto-installs parsers from local Git checkouts and skips the automatic `:TSUpdate` hook. Installed and bundled parsers are still usable. Run `:TSInstall` only for parsers with a local checkout, since explicit install or update commands can still download files.
@@ -165,22 +171,17 @@ The JavaScript parser covers `.jsx`, and the TypeScript checkout supplies both `
 
 Copy this repo's `nvim/init.lua` to `%LOCALAPPDATA%\nvim\init.lua`, preserving any laptop-specific edits. It automatically uses the local checkouts it finds on Windows. Restart Neovim with the portable build tools on `PATH` and, if needed, retry the affected parser with a command like `:TSInstall bash`.
 
-### Open LazyGit from Neovim
+### Use terminals in Neovim
 
-With `lazygit` on `PATH`, open Neovim in a Git repository and press `Ctrl+\` to open the LazyGit popup. Neovim installs ToggleTerm through Git on first startup with this config. In the **Files** panel, press `/` to filter changed files, use `j` and `k` to move, and press `e` to edit the selected file.
+In Normal mode, use these shortcuts to manage terminal splits with ToggleTerm:
 
-Press `Ctrl+\` again to hide the popup and keep LazyGit running. Press `Ctrl+\` from the editor to resume the same session. Press `q` in LazyGit when you want to quit it.
+| Shortcut | Action |
+| --- | --- |
+| **Space t t** | Open or hide the terminal panel, preserving running processes. |
+| **Space t n** | Create another terminal. |
+| **Space t s** | Select an existing terminal. |
 
-To make `e` open the file in your existing Neovim session on Windows, run `lazygit --print-config-dir` in CMD and edit `config.yml` in that folder. Merge these settings into the existing `os` section and remove the old `editPreset: nvim` line.
-
-```yaml
-os:
-  editInTerminal: false
-  edit: 'nvim --server "%NVIM%" --remote {{filename}}'
-  editAtLine: 'nvim --server "%NVIM%" --remote {{filename}}'
-```
-
-Restart Neovim after updating `init.lua` and saving the LazyGit settings. Pressing `e` opens the selected file in the editor window and hides the popup without creating a tab. The diff pane's `e` also opens the file without jumping to a specific line. See the [LazyGit editor settings](https://github.com/jesseduffield/lazygit/blob/master/docs/Config.md#configuring-file-editing).
+Inside a terminal, press **Esc twice** to enter Normal mode before using these shortcuts. Press **Ctrl+k** to move to the editor above the terminal. Press **Ctrl+j**, then **i**, to return to the terminal and type commands. Run your project's usual commands there, such as `python main.py`, `npm run dev`, or `go run .`. Press **Ctrl+c** to stop a foreground program, or run `exit` to end the shell.
 
 ### Open Neovim by typing `vim`
 
