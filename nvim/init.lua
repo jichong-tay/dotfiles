@@ -175,6 +175,35 @@ do
   vim.o.confirm = true
 end
 
+-- Open files with the operating system's default application. Shared by the
+-- keymaps and autocmds in Section 2 and the Telescope pickers in Section 5.
+local function open_externally(path)
+  local _, err = vim.ui.open(path)
+  if err then vim.notify(err, vim.log.levels.ERROR) end
+end
+
+-- Select a file in Explorer or Finder; other systems open its folder.
+local function reveal_externally(path)
+  local cmd
+  if vim.fn.has 'win32' == 1 then
+    -- Explorer takes "/select," and the path as separate arguments.
+    cmd = { 'explorer.exe', '/select,', (path:gsub('/', '\\')) }
+  elseif vim.fn.has 'mac' == 1 then
+    cmd = { 'open', '-R', path }
+  else
+    return open_externally(vim.fs.dirname(path))
+  end
+  local ok, err = pcall(vim.system, cmd, { detach = true })
+  if not ok then vim.notify(tostring(err), vim.log.levels.ERROR) end
+end
+
+-- The file on disk behind the current buffer; nil for terminals, Git views, etc.
+local function current_file()
+  local name = vim.api.nvim_buf_get_name(0)
+  if vim.bo.buftype ~= '' or name == '' or name:match '^%a[%w+.-]+://' then return nil end
+  return vim.fn.fnamemodify(name, ':p')
+end
+
 -- ============================================================
 -- SECTION 2: KEYMAPS & AUTOCMDS
 -- basic keymaps, basic autocmds
@@ -252,6 +281,58 @@ do
     desc = 'Highlight when yanking (copying) text',
     group = vim.api.nvim_create_augroup('kickstart-highlight-yank', { clear = true }),
     callback = function() vim.hl.on_yank() end,
+  })
+
+  -- [[ Open in other applications ]]
+  local function with_current_file(action)
+    return function()
+      local path = current_file()
+      if not path then
+        vim.notify('This buffer is not a file on disk.', vim.log.levels.INFO)
+        return
+      end
+      if vim.bo.modified then vim.notify('Using the saved file; this buffer has unsaved changes.', vim.log.levels.WARN) end
+      action(path)
+    end
+  end
+  vim.keymap.set('n', '<leader>o', with_current_file(open_externally), { desc = '[O]pen file in default app' })
+  vim.keymap.set('n', '<leader>O', with_current_file(reveal_externally), { desc = '[O]pen file location in file manager' })
+
+  -- Send documents, images and media to their default app instead of
+  -- loading their bytes into a buffer. Use <leader>O to find the file itself.
+  local external_types = {
+    'pdf', 'doc', 'docx', 'xls', 'xlsx', 'xlsm', 'ppt', 'pptx',
+    'png', 'jpg', 'jpeg', 'gif', 'bmp', 'webp', 'ico',
+    'mp3', 'wav', 'mp4', 'mov',
+  }
+  -- macOS and Windows already match patterns case-insensitively; adding both
+  -- cases there would open each file twice.
+  local external_patterns = {}
+  for _, ext in ipairs(external_types) do
+    external_patterns[#external_patterns + 1] = '*.' .. ext
+    if not vim.o.fileignorecase then external_patterns[#external_patterns + 1] = '*.' .. ext:upper() end
+  end
+  vim.api.nvim_create_autocmd('BufReadCmd', {
+    desc = 'Open binary documents with the default application',
+    group = vim.api.nvim_create_augroup('dotfiles-open-externally', { clear = true }),
+    pattern = external_patterns,
+    callback = function(ev)
+      -- Leave plugin buffers such as gitsigns://…/file.pdf to their own readers.
+      if ev.match:match '^%a[%w+.-]+://' then return end
+      open_externally(ev.match)
+      local buf = ev.buf
+      vim.schedule(function()
+        if not vim.api.nvim_buf_is_valid(buf) then return end
+        -- Put each window back on the buffer it showed before.
+        for _, win in ipairs(vim.fn.win_findbuf(buf)) do
+          vim.api.nvim_win_call(win, function()
+            local alt = vim.fn.bufnr '#'
+            if alt > 0 and alt ~= buf and vim.api.nvim_buf_is_valid(alt) then vim.cmd.buffer(alt) else vim.cmd.enew() end
+          end)
+        end
+        pcall(vim.api.nvim_buf_delete, buf, { force = true })
+      end)
+    end,
   })
 end
 
@@ -1391,15 +1472,32 @@ do
   vim.pack.add(telescope_plugins)
 
   -- See `:help telescope` and `:help telescope.setup()`
+  -- <C-o> opens the selected files (or all multi-selected with <Tab>) in their
+  -- default applications, e.g. spreadsheets from <leader>sf.
+  local function open_selection_externally(prompt_bufnr)
+    local action_state = require 'telescope.actions.state'
+    local entries = action_state.get_current_picker(prompt_bufnr):get_multi_selection()
+    if #entries == 0 then entries = { action_state.get_selected_entry() } end
+    require('telescope.actions').close(prompt_bufnr)
+    for _, entry in ipairs(entries) do
+      local path = entry.path or entry.filename or (type(entry.value) == 'string' and entry.value) or nil
+      if path and vim.fn.isabsolutepath(path) == 0 then path = vim.fs.joinpath(entry.cwd or vim.uv.cwd(), path) end
+      if path and vim.uv.fs_stat(path) then
+        open_externally(path)
+      else
+        vim.notify('This entry is not a file on disk.', vim.log.levels.INFO)
+      end
+    end
+  end
+
   require('telescope').setup {
-    -- You can put your default mappings / updates / etc. in here
     --  All the info you're looking for is in `:help telescope.setup()`
-    --
-    -- defaults = {
-    --   mappings = {
-    --     i = { ['<c-enter>'] = 'to_fuzzy_refine' },
-    --   },
-    -- },
+    defaults = {
+      mappings = {
+        i = { ['<C-o>'] = open_selection_externally },
+        n = { ['<C-o>'] = open_selection_externally },
+      },
+    },
     pickers = {
       find_files = {
         hidden = true,
