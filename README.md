@@ -263,6 +263,41 @@ Inline reviews retain normal diff matching, with individual pairs for short isol
 
 Earlier versions of the adapter could show a whole-file replacement such as `change:923/1012` when the Git revision and working file had different LF/CRLF formats. Update the copied config and restart Neovim before interpreting a block of that size as a genuine large replacement.
 
+#### Troubleshoot staging that leaves extra changes
+
+Seen on Windows: in a normal file view (no inline diff), pressing **Space h s** on a `_` deletion sign stages the deletion, but a sign then also appears on the line above. lazygit then lists the change twice, and re-staging the file in lazygit clears it. Git's index no longer matches what was staged. Gitsigns stages with `git apply --cached --unidiff-zero`, a patch with no context lines, so the patch can land in the wrong place if Gitsigns' view of the file or index is off. That could come from line endings, letter case in the path, or a missed index refresh. This could not be reproduced on macOS.
+
+Collect the following **before** fixing it in lazygit, while the extra sign is still visible.
+
+1. With the cursor in the affected file, run this read-only command in Neovim. It prints the path Gitsigns uses, its line-ending detection, and the hunk positions, without file contents. Use **`:messages`** to copy the output.
+
+   ```vim
+   :lua local c=require('gitsigns.cache').cache[vim.api.nvim_get_current_buf()]; local o=c and c.git_obj; local function f(hs) local t={} for i,h in ipairs(hs or {}) do if i<=12 then t[#t+1]=h.type..' -'..h.removed.start..','..h.removed.count..' +'..h.added.start..','..h.added.count end end return #t>0 and table.concat(t,', ') or 'none' end; print(o and ('relpath='..o.relpath..' i_crlf='..tostring(o.i_crlf)..' w_crlf='..tostring(o.w_crlf)..' ff='..vim.bo.fileformat..' eol='..tostring(vim.bo.endofline)) or 'gitsigns not attached'); print('unstaged='..f(c and c.hunks)..' | staged='..f(c and c.hunks_staged))
+   ```
+
+2. From the repository root, run these Git commands, replacing `<file>` with the file's path as Git lists it:
+
+   ```sh
+   git status --porcelain -- <file>
+   git ls-files -s --eol -- <file>
+   git config --show-origin --get-all core.autocrlf
+   git check-attr text eol -- <file>
+   git diff --cached -U0 -- <file>
+   git diff -U0 -- <file>
+   ```
+
+   The last two commands print changed source lines. To share only their positions, keep the lines that start with `@@`.
+
+| Output | Meaning |
+| --- | --- |
+| `MM` in `git status` | The file has both staged and unstaged changes. After staging a single deletion with nothing else changed, this confirms the mismatch. |
+| Two `ls-files` entries whose paths differ only in letter case | The index holds the file twice. Compare `relpath=` from step 1 with the path Git lists. |
+| `i/lf w/crlf` with `core.autocrlf=true` | Normal on Windows: Git stores LF and checks out CRLF. Step 1 should then show `i_crlf=false w_crlf=true ff=dos`; other values mean Gitsigns misdetected the line endings. |
+| `i/mixed` or `w/mixed` | The file mixes LF and CRLF lines, so a patch with no context lines may not match the lines Git compares. |
+| The `--cached` diff removes lines at a different position than the sign, or removes extra lines that the unstaged diff adds back | The patch was applied in the wrong place. Compare its `@@` positions with the `staged=` and `unstaged=` hunks from step 1. |
+
+To recover afterwards, unstage the file with `git restore --staged -- <file>` and stage the change again, or re-stage it in lazygit. `git add -- <file>` also clears the mismatch, but it stages every change in the file. When reporting the problem, include the step 1 output, the Git output (or just the `@@` lines), and whether the deleted lines were blank or repeated nearby, for example a closing `}` or `end`.
+
 ### Read the statusline
 
 The top bar shows the relative file path and unsaved (`[+]`) or read-only (`[RO]`) flags. Paths are not abbreviated by segment; paths wider than the pane are truncated to fit. The focused pane's path and bottom Git information follow the mode color: blue for Normal, green for Insert, purple for Visual, red for Replace, yellow for Command, and cyan for other modes. Backgrounds remain transparent and inactive panes stay muted. Error/warning counts keep their diagnostic colors.
