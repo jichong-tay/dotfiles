@@ -197,6 +197,27 @@ Deleted lines wrap inside the inline views (**Space h h**, **Space t i**, **go**
 
 To edit at the line you are reviewing, put the cursor on that line in the working-file pane and press **go**. The new tab starts with the inline diff against `HEAD` enabled (staged and unstaged changes); press **Space t i** if you want to hide it. The Git review stays open in its original tab; use **gT** to return or `:tabclose` to close the new editing tab. In the file list, **o** opens the selected file in a new tab; **go** is for preserving your cursor position in the file pane.
 
+#### Troubleshoot grouped red/green blocks in the inline view
+
+On the affected machine, open **Space h h**, select the affected file with **Enter**, and move the cursor into its code pane. Run this read-only command in Neovim:
+
+```vim
+:lua local v=require('gitsigns.unified').get_view(); local t={}; for i,h in ipairs(v and v.hunks or {}) do if i<=12 then t[#t+1]=h.type..':'..h.removed.count..'/'..h.added.count end end; local f=debug.getinfo(require('gitsigns.hunk_preview').capture_removed_hunks_from_source,'S'); print('renderer='..f.short_src..':'..f.linedefined); print('unified='..tostring(v~=nil)..' blocks='..table.concat(t,', '))
+```
+
+Use **`:messages`** to read or copy the output if it is cut off. It contains the renderer's source location and the first 12 change blocks' types and line counts, without file contents.
+
+| Output | Meaning |
+| --- | --- |
+| `renderer=...init.lua:...` | The custom inline display adapter is loaded. |
+| `renderer=...gitsigns/hunk_preview.lua:...` | Gitsigns' original renderer is active. Check which config this Neovim instance loads with `:echo $MYVIMRC`. On Windows, copy the latest repo `nvim/init.lua` to `%LOCALAPPDATA%\nvim\init.lua`, then completely restart Neovim. |
+| `unified=false` | The current pane is not a Gitsigns inline code view. Move out of the file list or switch back from side-by-side view with **gu** in the file list, then rerun the command. |
+| `change:1/1` | One old/new line pair. Several such entries should appear for a paired replacement. |
+| `change:80/80` | A grouped replacement of 80 old and 80 new lines. This can be the performance fallback described below. |
+| `add:0/10` or `delete:10/0` | Ten added or deleted lines with no matched opposite side; these stay grouped. |
+
+Extra line matching has a shared budget of **500,000 estimated work units per displayed diff**. A block's estimate is `removed × added × min(removed, added)`. For example, an 80-old/80-new replacement costs `512,000`, exceeds the budget, and currently stays grouped. This fallback can explain why side-by-side looks correct while inline still shows a red block followed by a green block; it does not prove that this is the cause on another machine. The output above helps distinguish the fallback from a config that has not loaded the adapter.
+
 ### Read the statusline
 
 The top bar shows the relative file path and unsaved (`[+]`) or read-only (`[RO]`) flags. Paths are not abbreviated by segment; paths wider than the pane are truncated to fit. The focused pane's path and bottom Git information follow the mode color: blue for Normal, green for Insert, purple for Visual, red for Replace, yellow for Command, and cyan for other modes. Backgrounds remain transparent and inactive panes stay muted. Error/warning counts keep their diagnostic colors.
