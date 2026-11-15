@@ -201,6 +201,35 @@ Deleted lines wrap inside the inline views (**Space h h**, **Space t i**, **go**
 
 To edit at the line you are reviewing, put the cursor on that line in the working-file pane and press **go**. The new tab starts with the inline diff against `HEAD` enabled (staged and unstaged changes); press **Space t i** if you want to hide it. The Git review stays open in its original tab; use **gT** to return or `:tabclose` to close the new editing tab. In the file list, **o** opens the selected file in a new tab; **go** is for preserving your cursor position in the file pane.
 
+#### Troubleshoot side-by-side colors and alignment
+
+In an affected **Space h d** or **Space h D** code pane:
+
+1. If red and green highlights overlap within one line, try **`:Gitsigns toggle_word_diff false`**. This disables the extra Gitsigns word overlay while keeping native diff highlighting active. Check whether the mixture disappears before changing theme colors again.
+2. Run **`:set diffopt?`** and keep the output. The default `linematch:60` only aligns similar lines within change blocks containing at most 60 old and new lines combined. Larger blocks can pair shifted function definitions poorly.
+3. Try a temporary, bounded increase:
+
+   ```vim
+   :set diffopt+=linematch:200
+   :diffupdate
+   ```
+
+   Check the same function before and after this change. The larger limit can improve alignment, but matching may take longer on slower machines. It does not change the repository's configuration or file contents. Restart Neovim, or run **`:set diffopt+=linematch:60`** followed by **`:diffupdate`**, to restore the configured limit.
+
+4. If the larger limit does not help, restore 60 and try a different alignment algorithm:
+
+   ```vim
+   :set diffopt+=linematch:60
+   :set diffopt+=algorithm:patience
+   :diffupdate
+   ```
+
+   Restore the configured algorithm with **`:set diffopt+=algorithm:histogram`** followed by **`:diffupdate`**. If both algorithms mismatch the same definitions, an anonymized before/after excerpt preserving indentation and blank lines is needed to reproduce that specific alignment choice.
+
+The config sets `algorithm`, `linematch`, and `inline` individually so Neovim 0.12 replaces its defaults. Older config copies may show duplicate entries such as `linematch:40,linematch:60` and `inline:char,inline:word`.
+
+When reporting a problem from another machine, include the `diffopt` output, whether disabling the word overlay removed the mixed colors, and whether the temporary matching limit or algorithm improved the alignment. No source code is required for these initial checks.
+
 #### Troubleshoot grouped red/green blocks in the inline view
 
 On the affected machine, open **Space h h**, select the affected file with **Enter**, and move the cursor into its code pane. Run this read-only command in Neovim:

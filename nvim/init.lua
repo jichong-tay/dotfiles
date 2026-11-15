@@ -529,7 +529,10 @@ do
     })
   end
   -- Align similar lines in diff splits and highlight individual changed words.
-  vim.opt.diffopt:append { 'algorithm:histogram', 'linematch:60', 'inline:word' }
+  -- Set keyed options separately: Lua :append() keeps duplicate defaults on Nvim 0.12.
+  vim.cmd 'set diffopt+=algorithm:histogram'
+  vim.cmd 'set diffopt+=linematch:60'
+  vim.cmd 'set diffopt+=inline:word'
   gitsigns.setup {
     signs = {
       add = { text = '+' }, ---@diagnostic disable-line: missing-fields
