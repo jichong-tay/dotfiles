@@ -724,6 +724,10 @@ do
     local inline_chain_gap = 6
     local chains = setmetatable({}, { __mode = 'k' })
 
+    -- Empty diff nodes point after the previous line; nonempty nodes start on
+    -- a one-based line. Compare both as zero-based boundaries when chaining.
+    local function start_row(node) return node.start - (node.count > 0 and 1 or 0) end
+
     -- A display chain includes context, but only its original edits get colors.
     preview.highlight_added_hunk = function(buf, ns, hunk)
       if chains[hunk] then
@@ -786,21 +790,26 @@ do
         while i <= #display_hunks do
           local first, last, stop = display_hunks[i], display_hunks[i], i
           local changed = math.max(first.removed.count, first.added.count)
-          while last.type == 'change' and stop < #display_hunks do
+          local removed, added = first.removed.count, first.added.count
+          while stop < #display_hunks do
             local next_hunk = display_hunks[stop + 1]
-            local old_gap = next_hunk.removed.start - last.removed.start - last.removed.count
-            local new_gap = next_hunk.added.start - last.added.start - last.added.count
-            if next_hunk.type ~= 'change' or old_gap < 0 or old_gap ~= new_gap or old_gap > inline_chain_gap then break end
+            local old_gap = start_row(next_hunk.removed) - start_row(last.removed) - last.removed.count
+            local new_gap = start_row(next_hunk.added) - start_row(last.added) - last.added.count
+            if old_gap < 0 or old_gap ~= new_gap or old_gap > inline_chain_gap then break end
             stop, last = stop + 1, next_hunk
             changed = changed + math.max(last.removed.count, last.added.count)
+            removed, added = removed + last.removed.count, added + last.added.count
           end
-          if stop > i and changed >= inline_block_threshold then
-            local merged = hunks.create_hunk(first.removed.start, last.removed.start + last.removed.count - first.removed.start,
-              first.added.start, last.added.start + last.added.count - first.added.start)
+          if stop > i and changed >= inline_block_threshold and removed > 0 and added > 0 then
+            local old_start, new_start = start_row(first.removed), start_row(first.added)
+            local merged = hunks.create_hunk(old_start + 1, start_row(last.removed) + last.removed.count - old_start,
+              new_start + 1, start_row(last.added) + last.added.count - new_start)
             for _, side in ipairs({ 'removed', 'added' }) do
               local node = merged[side]
-              node.lines = vim.api.nvim_buf_get_lines(side == 'removed' and base or buf, node.start - 1, node.start + node.count - 1, false)
-              node.no_nl_at_eof = last[side].no_nl_at_eof
+              local source = side == 'removed' and base or buf
+              local last_line = node.start + node.count - 1
+              node.lines = vim.api.nvim_buf_get_lines(source, node.start - 1, last_line, false)
+              node.no_nl_at_eof = last_line == vim.api.nvim_buf_line_count(source) and not vim.bo[source].endofline or nil
             end
             chains[merged] = vim.list_slice(display_hunks, i, stop)
             sections[#sections + 1] = merged
