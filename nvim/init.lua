@@ -99,7 +99,7 @@ do
   vim.g.maplocalleader = ' '
 
   -- Set to true if you have a Nerd Font installed and selected in the terminal
-  vim.g.have_nerd_font = false
+  vim.g.have_nerd_font = true
 
   -- [[ Setting options ]]
   --  See `:help vim.o`
@@ -379,6 +379,8 @@ do
   -- Adds git related signs to the gutter, as well as utilities for managing changes
   vim.pack.add { gh 'lewis6991/gitsigns.nvim' }
   local gitsigns = require 'gitsigns'
+  -- Align similar lines in diff splits and highlight individual changed words.
+  vim.opt.diffopt:append { 'algorithm:histogram', 'linematch:60', 'inline:word' }
   gitsigns.setup {
     signs = {
       add = { text = '+' }, ---@diagnostic disable-line: missing-fields
@@ -417,11 +419,12 @@ do
       vim.keymap.set('n', '<leader>hp', gitsigns.preview_hunk, { desc = 'git [p]review hunk', buf = bufnr })
       vim.keymap.set('n', '<leader>hi', gitsigns.preview_hunk_inline, { desc = 'git preview hunk [i]nline', buf = bufnr })
       vim.keymap.set('n', '<leader>hb', function() gitsigns.blame_line { full = true } end, { desc = 'git [b]lame line', buf = bufnr })
-      vim.keymap.set('n', '<leader>hd', gitsigns.diffthis, { desc = 'git [d]iff against index', buf = bufnr })
-      vim.keymap.set('n', '<leader>hD', function() gitsigns.diffthis '~' end, { desc = 'git [D]iff against last commit', buf = bufnr })
+      vim.keymap.set('n', '<leader>hd', function() gitsigns.diffthis(nil, { vertical = true }) end, { desc = 'git [d]iff unstaged changes', buf = bufnr })
+      vim.keymap.set('n', '<leader>hD', function() gitsigns.diffthis('HEAD', { vertical = true }) end, { desc = 'git [D]iff all uncommitted changes', buf = bufnr })
       vim.keymap.set('n', '<leader>hQ', function() gitsigns.setqflist 'all' end, { desc = 'git hunk [Q]uickfix list (all files in repo)', buf = bufnr })
       vim.keymap.set('n', '<leader>hq', gitsigns.setqflist, { desc = 'git hunk [q]uickfix list (all changes in this file)', buf = bufnr })
       -- Toggles
+      vim.keymap.set('n', '<leader>ti', function() gitsigns.diffthis('HEAD', { unified = true }) end, { desc = '[T]oggle all uncommitted changes [i]nline', buf = bufnr })
       vim.keymap.set('n', '<leader>tb', gitsigns.toggle_current_line_blame, { desc = '[T]oggle git show [b]lame line', buf = bufnr })
       vim.keymap.set('n', '<leader>tw', gitsigns.toggle_word_diff, { desc = '[T]oggle git intra-line [w]ord diff', buf = bufnr })
       -- Text object
@@ -429,22 +432,127 @@ do
     end,
   }
 
+  -- Repository-wide review also works before opening a tracked file.
+  vim.keymap.set('n', '<leader>hh', function() gitsigns.diff(nil, nil, { diff = 'unified' }) end, { desc = 'git status and inline diff panel' })
+  vim.keymap.set('n', 'go', function()
+    if vim.bo.buftype ~= '' or vim.api.nvim_buf_get_name(0) == '' then
+      vim.notify('Move to the working file pane before opening it in a new tab.', vim.log.levels.INFO)
+      return
+    end
+    vim.cmd 'tab split'
+    vim.cmd 'diffoff'
+    gitsigns.diffthis('HEAD', { unified = true })
+  end, { desc = 'Open current file at cursor with inline diff' })
+
   vim.pack.add { gh 'akinsho/toggleterm.nvim' }
   require('toggleterm').setup { direction = 'horizontal' }
-  vim.keymap.set('n', '<leader>tt', '<cmd>ToggleTerm<CR>', { desc = '[T]oggle [T]erminal' })
-  vim.keymap.set('n', '<leader>tn', '<cmd>TermNew<CR>', { desc = '[T]erminal [N]ew' })
-  vim.keymap.set('n', '<leader>ts', '<cmd>TermSelect<CR>', { desc = '[T]erminal [S]elect' })
+  -- Read project terminal settings without changing Neovim's own environment.
+  local function terminal_environment(dir)
+    local inherited = vim.fn.environ()
+    local root = dir
+    local path
+    while root do
+      local candidate = vim.fs.joinpath(root, '.vscode', 'settings.json')
+      if vim.fn.filereadable(candidate) == 1 then
+        path = candidate
+        break
+      end
+      if vim.uv.fs_stat(vim.fs.joinpath(root, '.git')) then break end
+      local parent = vim.fs.dirname(root)
+      root = parent ~= root and parent or nil
+    end
+    if not path then return inherited end
+
+    local ok, environment = pcall(function()
+      local json = table.concat(vim.fn.readfile(path), '\n')
+      local settings = vim.json.decode(require('plenary.json').json_strip_comments(json))
+      local windows = vim.fn.has 'win32' == 1
+      local platform = windows and 'windows' or (vim.fn.has 'macunix' == 1 and 'osx' or 'linux')
+      local overrides = settings['terminal.integrated.env.' .. platform]
+      if overrides == nil then return inherited end
+      assert(type(overrides) == 'table', 'terminal environment must be an object')
+      local env = vim.deepcopy(inherited)
+      for name, value in pairs(overrides) do
+        assert(type(name) == 'string' and name ~= '' and not name:find '[=%z]', 'invalid environment variable name')
+        assert(value == vim.NIL or type(value) == 'string', 'environment values must be strings or null')
+        if windows then
+          -- Windows treats Path and PATH as the same variable.
+          for key in pairs(env) do
+            if key:upper() == name:upper() then env[key] = nil end
+          end
+        end
+        if value == vim.NIL then
+          env[name] = nil
+        else
+          env[name] = value:gsub('%${([^}]+)}', function(variable)
+            if variable == 'workspaceFolder' then return root end
+            if variable == 'workspaceFolderBasename' then return vim.fs.basename(root) end
+            if variable == 'userHome' then return vim.fn.expand '~' end
+            if variable == 'pathSeparator' or variable == '/' then return windows and '\\' or '/' end
+            if variable:sub(1, 4) == 'env:' then return vim.env[variable:sub(5)] or '' end
+            error('unsupported substitution: ${' .. variable .. '}')
+          end)
+          assert(not env[name]:find '%z', 'environment values cannot contain NUL')
+        end
+      end
+      return env
+    end)
+    if ok then return environment end
+    vim.notify('Cannot load terminal environment from ' .. path .. '; using inherited environment. Check its JSON and substitutions.', vim.log.levels.WARN)
+    return inherited
+  end
+
+  local function new_terminal()
+    local dir = vim.fn.getcwd()
+    require('toggleterm.terminal').Terminal:new {
+      dir = dir,
+      env = terminal_environment(dir),
+      clear_env = true, -- Preserve inherited variables except those explicitly set to null.
+    }:toggle()
+  end
+
+  local function toggle_terminal()
+    if #require('toggleterm.terminal').get_all() == 0 then
+      new_terminal()
+    else
+      require('toggleterm').toggle()
+    end
+  end
+
+  vim.keymap.set('n', '<leader>ttt', toggle_terminal, { desc = '[T]oggle terminal' })
+  vim.keymap.set('n', '<leader>ttn', new_terminal, { desc = '[N]ew terminal' })
+  vim.keymap.set('n', '<leader>tts', '<cmd>TermSelect<CR>', { desc = '[S]elect terminal' })
 
   -- Useful plugin to show you pending keybinds.
   vim.pack.add { gh 'folke/which-key.nvim' }
+  local leader_order = { h = 1, t = 2, s = 3, ['<Space>'] = 4, ['/'] = 5, q = 6, f = 7 }
+  local toggle_order = { i = 1, t = 2, b = 3, m = 4, w = 5, h = 6 }
+  local terminal_order = { t = 1, s = 2, n = 3 }
+  local leader_prefix = vim.fn.keytrans(vim.g.mapleader)
   require('which-key').setup {
     -- Delay between pressing a key and opening which-key (milliseconds)
     delay = 0,
     icons = { mappings = vim.g.have_nerd_font },
+    sort = {
+      function(item)
+        local parent = item.node.parent and item.node.parent.keys
+        local order
+        if parent == leader_prefix then
+          order = leader_order
+        elseif parent == leader_prefix .. 't' then
+          order = toggle_order
+        elseif parent == leader_prefix .. 'tt' then
+          order = terminal_order
+        end
+        return order and (order[item.node.key] or 1000) or 1000
+      end,
+      'local', 'order', 'group', 'alphanum', 'mod',
+    },
     -- Document existing key chains
     spec = {
       { '<leader>s', group = '[S]earch', mode = { 'n', 'v' } },
       { '<leader>t', group = '[T]oggle' },
+      { '<leader>tt', group = '[T]erminal' },
       { '<leader>h', group = 'Git [H]unk', mode = { 'n', 'v' } }, -- Enable gitsigns recommended keymaps first
       { 'gr', group = 'LSP Actions', mode = { 'n' } },
     },
@@ -462,10 +570,20 @@ do
       FloatBorder = { bg = 'NONE' },
       Pmenu = { bg = 'NONE' },
       PmenuSbar = { bg = 'NONE' },
-      TabLine = { bg = 'NONE' },
+      TabLine = { fg = '#94a3b8', bg = 'NONE' },
+      TabLineSel = { fg = '#0f172a', bg = '#93c5fd', bold = true },
       TabLineFill = { bg = 'NONE' },
+      WinBar = { fg = '#93c5fd', bg = 'NONE', bold = true },
+      WinBarNC = { fg = '#94a3b8', bg = 'NONE' },
+      -- Keep word-level diff highlights distinct from the white cursor.
+      GitSignsAddInline = { fg = '#d4f8dd', bg = '#234f34', bold = true },
+      GitSignsChangeInline = { fg = '#ffe3a1', bg = '#5a451b', bold = true },
+      GitSignsDeleteInline = { fg = '#ffd7dc', bg = '#602a32', bold = true },
       StatusLine = { bg = 'NONE' },
       StatusLineNC = { bg = 'NONE' },
+      MiniStatuslineFilename = { fg = '#d4d4d4', bg = 'NONE' },
+      MiniStatuslineDevinfo = { fg = '#93c5fd', bg = 'NONE' },
+      MiniStatuslineInactive = { fg = '#94a3b8', bg = 'NONE' },
       MiniStatuslineModeNormal = { fg = '#0f172a', bg = '#93c5fd', bold = true },
       MiniStatuslineModeInsert = { fg = '#0f172a', bg = '#86efac', bold = true },
       MiniStatuslineModeVisual = { fg = '#0f172a', bg = '#c4b5fd', bold = true },
@@ -523,22 +641,143 @@ do
   -- - sr)'  - [S]urround [R]eplace [)] [']
   require('mini.surround').setup()
 
-  -- Keep the status line focused on the current file.
+  -- Keep relative paths readable, including in Git review and terminal panes.
   local statusline = require 'mini.statusline'
+  -- Cache upstream commit counts; never run Git while drawing the bars.
+  local branch_counts = {}
+  local function refresh_branch_counts(buf, force)
+    if not vim.api.nvim_buf_is_valid(buf) then return end
+    local status = vim.b[buf].gitsigns_status_dict or {}
+    local root, head = status.root, status.head
+    if not root or not head then
+      vim.b[buf].git_ahead_behind = ''
+      return
+    end
+    local cached = branch_counts[root]
+    vim.b[buf].git_ahead_behind = cached and cached.head == head and cached.text or ''
+    local now = vim.uv.now()
+    if cached and cached.head == head then
+      if cached.running then
+        cached.refresh = cached.refresh or force
+        return
+      end
+      if not force and now - cached.time < 5000 then return end
+    end
+    local entry = { head = head, text = vim.b[buf].git_ahead_behind, time = now, running = true }
+    branch_counts[root] = entry
+    local function on_result(result)
+      vim.schedule(function()
+        if branch_counts[root] ~= entry then return end
+        local ahead, behind
+        if result.code == 0 then ahead, behind = (result.stdout or ''):match('^(%d+)%s+(%d+)') end
+        local ahead_label = vim.g.have_nerd_font and '' or 'ahead'
+        local behind_label = vim.g.have_nerd_font and '' or 'behind'
+        entry.text = ahead and ('%s %s  %s %s'):format(ahead_label, ahead, behind_label, behind) or ''
+        entry.running = false
+        local refresh_buf
+        for _, other in ipairs(vim.api.nvim_list_bufs()) do
+          local other_status = vim.b[other].gitsigns_status_dict or {}
+          if other_status.root == root and other_status.head == head then
+            vim.b[other].git_ahead_behind = entry.text
+            refresh_buf = other
+          end
+        end
+        vim.cmd 'redrawstatus!'
+        if entry.refresh and refresh_buf then refresh_branch_counts(refresh_buf, true) end
+      end)
+    end
+    local ok = pcall(vim.system, { 'git', 'rev-list', '--left-right', '--count', 'HEAD...@{upstream}' }, { cwd = root, text = true, timeout = 5000 }, on_result)
+    if not ok then on_result { code = -1 } end
+  end
+  local branch_group = vim.api.nvim_create_augroup('GitBranchWinbar', { clear = true })
+  vim.api.nvim_create_autocmd('User', {
+    group = branch_group,
+    pattern = 'GitSignsUpdate',
+    callback = function(ev) refresh_branch_counts(ev.data and ev.data.buffer or vim.api.nvim_get_current_buf()) end,
+  })
+  vim.api.nvim_create_autocmd({ 'BufEnter', 'CursorHold' }, {
+    group = branch_group,
+    callback = function(ev) refresh_branch_counts(ev.buf) end,
+  })
+  vim.api.nvim_create_autocmd({ 'FocusGained', 'TermLeave', 'TermClose', 'ShellCmdPost' }, {
+    group = branch_group,
+    callback = function()
+      local seen = {}
+      for _, buf in ipairs(vim.api.nvim_list_bufs()) do
+        local root = (vim.b[buf].gitsigns_status_dict or {}).root
+        if root and not seen[root] then
+          seen[root] = true
+          refresh_branch_counts(buf, true)
+        end
+      end
+    end,
+  })
+  local function statusline_filename()
+    local name = vim.api.nvim_buf_get_name(0)
+    local label
+    if name:match '^gitsigns%-diff://' then
+      label = 'Git changes'
+    elseif vim.bo.buftype == 'terminal' then
+      label = 'Terminal'
+    else
+      local revision, path = name:match '^gitsigns://.-//(.-):(.*)$'
+      if revision then
+        if revision == '' and path:sub(1, 2) == '0:' then revision, path = 'Index', path:sub(3) end
+        label = path .. ' [' .. revision .. ']'
+      else
+        label = vim.fn.expand '%:.'
+        if label == '' then label = '[No Name]' end
+      end
+    end
+    return label:gsub('%%', '%%%%') .. '%m%r'
+  end
+  -- Winbar expressions need a globally callable function; keep its code here.
+  _G.DotfilesWinbar = statusline_filename
+  vim.o.winbar = '%<%{%v:lua.DotfilesWinbar()%}'
+
   statusline.setup {
     use_icons = vim.g.have_nerd_font,
     content = {
       active = function()
         local mode, mode_hl = statusline.section_mode { trunc_width = math.huge }
+        local git = statusline.section_git { trunc_width = 0 }
+        local counts = {}
+        if not statusline.is_truncated(80) and vim.diagnostic.is_enabled { bufnr = 0 } then counts = vim.diagnostic.count(0) end
+        local errors = counts[vim.diagnostic.severity.ERROR] or 0
+        local warnings = counts[vim.diagnostic.severity.WARN] or 0
         return statusline.combine_groups {
           { hl = mode_hl, strings = { mode } },
-          { hl = 'MiniStatuslineFilename', strings = { "%{empty(expand('%:.')) ? '[No Name]' : expand('%:.')}%m%r" } },
+          '%<',
+          { hl = 'MiniStatuslineDevinfo', strings = { (git:gsub('%%', '%%%%')) } },
           '%=',
+          { hl = 'MiniStatuslineDevinfo', strings = { '%{get(b:, "git_ahead_behind", "")}' } },
+          { hl = 'DiagnosticError', strings = { errors > 0 and ('E' .. errors) or '' } },
+          { hl = 'DiagnosticWarn', strings = { warnings > 0 and ('W' .. warnings) or '' } },
           { hl = mode_hl, strings = { '%l:%v' } },
+        }
+      end,
+      inactive = function()
+        return statusline.combine_groups {
+          { hl = 'MiniStatuslineInactive', strings = { (statusline.section_git { trunc_width = 0 }:gsub('%%', '%%%%')), '%{get(b:, "git_ahead_behind", "")}' } },
         }
       end,
     },
   }
+
+  -- Match the active filepath and Git accents to the existing mode badges.
+  local function sync_bar_colors()
+    local _, mode_hl = statusline.section_mode { trunc_width = math.huge }
+    local mode_colors = vim.api.nvim_get_hl(0, { name = mode_hl, link = false })
+    local accent = mode_colors.bg or '#93c5fd'
+    vim.api.nvim_set_hl(0, 'WinBar', { fg = accent, bg = 'NONE', bold = true })
+    vim.api.nvim_set_hl(0, 'MiniStatuslineDevinfo', { fg = accent, bg = 'NONE' })
+    vim.cmd 'redrawstatus!'
+  end
+  vim.api.nvim_create_autocmd({ 'ModeChanged', 'ColorScheme' }, {
+    group = vim.api.nvim_create_augroup('ModeBarColors', { clear = true }),
+    callback = sync_bar_colors,
+  })
+  sync_bar_colors()
 end
 
 -- ============================================================

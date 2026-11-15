@@ -171,17 +171,58 @@ The JavaScript parser covers `.jsx`, and the TypeScript checkout supplies both `
 
 Copy this repo's `nvim/init.lua` to `%LOCALAPPDATA%\nvim\init.lua`, preserving any laptop-specific edits. It automatically uses the local checkouts it finds on Windows. Restart Neovim with the portable build tools on `PATH` and, if needed, retry the affected parser with a command like `:TSInstall bash`.
 
-### Use terminals in Neovim
+### Review Git changes in Neovim
 
-In Normal mode, use these shortcuts to manage terminal splits with ToggleTerm:
+Use **Space h h** from a repository directory to open the Git status and diff panel, even before opening a file. The other shortcuts below require an open tracked file. Use them in Normal mode:
 
 | Shortcut | Action |
 | --- | --- |
-| **Space t t** | Open or hide the terminal panel, preserving running processes. |
-| **Space t n** | Create another terminal. |
-| **Space t s** | Select an existing terminal. |
+| **Space h h** | Open the repository's changed-file list and inline diff panel. |
+| **Space h d** | Compare unstaged changes side by side with the index. |
+| **Space h D** | Compare all uncommitted changes in this file with `HEAD` (staged and unstaged). |
+| **Space t i** | Toggle a full-file inline view against `HEAD` (staged and unstaged), with removed lines above their replacements. |
+| **Space h p** | Preview just the change under the cursor in a popup. |
+| **Space h i** | Preview just the change under the cursor inline. |
+| **go** | From the working-file pane, open an editing tab at the same line and column with the inline diff enabled. |
+| **]c** / **[c** | Move to the next / previous change. |
+
+Side-by-side diffs show the base on the left and your current file on the right. Similar lines are aligned and changed words highlighted. Unchanged lines between edits remain context; longer unchanged sections may be folded. Press `zo` to expand a fold. To close the comparison, move to the left pane with **Ctrl+w h** and run `:close`; do this before opening the inline view. Press **Space t i** again to close the inline view.
+
+Within the **Space t i** inline view, **]c** and **[c** navigate both staged and unstaged changes shown against `HEAD`. Outside that view or a side-by-side comparison, they navigate unstaged changes.
+
+The **Space h h** review opens with two panes: the file list and an inline diff against `HEAD` showing staged and unstaged changes. Use **Ctrl+h / Ctrl+l** to move left/right, or **Ctrl+w**, then **w**, to cycle panes. For separate Neovim tabs, use **gt / gT** for next/previous. In the file list, **Enter** opens a file, **s / u** stage/unstage it, **gu** switches between inline and side-by-side layouts, **g?** shows help, and **q** closes the review. **]f / [f** move between changed files from the list or file panes.
+
+To edit at the line you are reviewing, put the cursor on that line in the working-file pane and press **go**. The new tab starts with the inline diff against `HEAD` enabled (staged and unstaged changes); press **Space t i** if you want to hide it. The Git review stays open in its original tab; use **gT** to return or `:tabclose` to close the new editing tab. In the file list, **o** opens the selected file in a new tab; **go** is for preserving your cursor position in the file pane.
+
+### Read the statusline
+
+The top bar shows the relative file path and unsaved (`[+]`) or read-only (`[RO]`) flags. Paths are not abbreviated by segment; paths wider than the pane are truncated to fit. The focused pane's path and bottom Git information follow the mode color: blue for Normal, green for Insert, purple for Visual, red for Replace, yellow for Command, and cyan for other modes. Backgrounds remain transparent and inactive panes stay muted. Error/warning counts keep their diagnostic colors.
+
+The bottom statusline shows the Git branch once Gitsigns detects it, plus commit counts relative to its configured upstream: ` 2   1` means two commits ahead and one behind. Zero counts are shown; counts are omitted if Git cannot compare with an upstream (for example, a new branch without tracking configured). Checks run asynchronously and are cached per repository for five seconds. They refresh on Git updates, entering a file, or an idle cursor, and are forced when returning focus or leaving a terminal. Counts use local tracking refs; run `git fetch` to learn about newer remote commits. The bar does not fetch automatically.
+
+The active bottom statusline also shows the short mode (`N`, `I`, or `V`), error/warning counts (`E2 W1`), and line:column. Diagnostic counts appear in panes at least 80 columns wide. Zero diagnostic counts are hidden. Mode and position keep their mode colors, and inactive panes show muted Git information.
+
+Git review panes use readable labels such as `Git changes`, `src/file.lua [HEAD]`, or `src/file.lua [Index]`; terminal panes show `Terminal`. Nerd Font support is enabled for both macOS and Windows; select your installed Nerd Font in the terminal's font settings. Setting `vim.g.have_nerd_font = false` restores plain-text fallbacks, including `ahead` and `behind` labels.
+
+### Use terminals in Neovim
+
+In Normal mode, press **Space t t** to open the Terminal submenu, then choose **t**, **s**, or **n**:
+
+Which-key lists the main **Space** menu in the order **h, t, s, Space, /, q, f**, the **Space t** menu in the order **i, t, b, m, w, h** (when those actions are available), and the Terminal submenu in the order **t, s, n**. Other menus retain their default sorting.
+
+| Shortcut | Action |
+| --- | --- |
+| **Space t t t** | Open or hide the terminal panel, preserving running processes. |
+| **Space t t s** | Select an existing terminal. |
+| **Space t t n** | Create another terminal. |
 
 Inside a terminal, press **Esc twice** to enter Normal mode before using these shortcuts. Press **Ctrl+k** to move to the editor above the terminal. Press **Ctrl+j**, then **i**, to return to the terminal and type commands. Run your project's usual commands there, such as `python main.py`, `npm run dev`, or `go run .`. Press **Ctrl+c** to stop a foreground program, or run `exit` to end the shell.
+
+Terminals created with **Space t t t** or **Space t t n** read all variables from your project's `.vscode/settings.json`: `terminal.integrated.env.windows` on Windows, `.osx` on macOS, or `.linux` on Linux. Launch Neovim in the project directory (or use `:cd` there). Settings are found by searching upwards from `:pwd`, stopping at the Git root. There are no hardcoded variable names or values.
+
+JSON comments and trailing commas are supported. Values can use `${workspaceFolder}`, `${workspaceFolderBasename}`, `${userHome}`, `${env:NAME}`, and `${pathSeparator}` (or `${/}`). A `null` value removes an inherited variable. Unsupported substitutions or invalid settings produce a warning and leave the terminal's environment inherited from Neovim.
+
+After editing the settings, create a new terminal with **Space t t n**; hiding and reopening a terminal keeps its existing environment and processes. These settings apply only to terminals created through the shortcuts; Neovim's own environment, language servers, and terminals created directly with `:terminal`, `:ToggleTerm`, or `:TermNew` are unaffected. This terminal setup is contained in `nvim/init.lua`; copy it to `%LOCALAPPDATA%\nvim\init.lua` on Windows.
 
 ### Open Neovim by typing `vim`
 
