@@ -720,8 +720,8 @@ do
     local preview = require 'gitsigns.hunk_preview'
     local capture = preview.capture_removed_hunks_from_source
     local highlight_added = preview.highlight_added_hunk
-    local inline_block_threshold = 2
-    local inline_chain_gap = 6
+    local inline_block_threshold = 3
+    local inline_chain_gap = 3
     local chains = setmetatable({}, { __mode = 'k' })
 
     -- Empty diff nodes point after the previous line; nonempty nodes start on
