@@ -1323,6 +1323,8 @@ do
     group_overrides = {
       NormalFloat = { bg = 'NONE' },
       FloatBorder = { bg = 'NONE' },
+      DotfilesHover = { fg = '#d4d4d4', bg = '#252526' },
+      DotfilesHoverBorder = { fg = '#64748b', bg = '#252526' },
       Pmenu = { bg = 'NONE' },
       PmenuSbar = { bg = 'NONE' },
       TabLine = { fg = '#94a3b8', bg = 'NONE' },
@@ -1772,6 +1774,23 @@ do
   -- Useful status updates for LSP.
   vim.pack.add { gh 'j-hui/fidget.nvim' }
   require('fidget').setup {}
+
+  -- Style the built-in K hover without changing other floating windows.
+  vim.api.nvim_create_autocmd('WinNew', {
+    group = vim.api.nvim_create_augroup('dotfiles-hover-style', { clear = true }),
+    callback = function()
+      local win = vim.api.nvim_get_current_win()
+      -- The LSP preview identifies its window after WinNew has fired.
+      vim.schedule(function()
+        if not vim.api.nvim_win_is_valid(win) or not vim.w[win]['textDocument/hover'] then
+          return
+        end
+        vim.api.nvim_win_set_config(win, { border = 'rounded' })
+        vim.wo[win].winhighlight = 'Normal:DotfilesHover,NormalFloat:DotfilesHover,FloatBorder:DotfilesHoverBorder'
+        vim.wo[win].winblend = 0
+      end)
+    end,
+  })
 
   --  This function gets run when an LSP attaches to a particular buffer.
   --    That is to say, every time a new file is opened that is associated with
