@@ -528,12 +528,15 @@ do
       callback = function(ev) previews[tonumber(ev.match)] = nil end,
     })
   end
-  -- Align similar lines in diff splits and highlight individual changed words.
+  -- Align similar lines in diff splits; the theme below controls their emphasis.
   -- Set keyed options separately: Lua :append() keeps duplicate defaults on Nvim 0.12.
   vim.cmd 'set diffopt+=algorithm:histogram'
   vim.cmd 'set diffopt+=linematch:60'
   vim.cmd 'set diffopt+=inline:word'
   gitsigns.setup {
+    -- Coalesce rapid edits on slower Windows machines; keep Git watchers active
+    -- so external staging and branch changes still update the comparison base.
+    update_debounce = is_windows and 500 or 100,
     signs = {
       add = { text = '+' }, ---@diagnostic disable-line: missing-fields
       change = { text = '~' }, ---@diagnostic disable-line: missing-fields
@@ -583,6 +586,70 @@ do
       vim.keymap.set({ 'o', 'x' }, 'ih', gitsigns.select_hunk, { desc = 'text object [i]nside [h]unk', buf = bufnr })
     end,
   }
+
+  -- Native diff groups describe relative changes, not old/new sides. Give each
+  -- pane a soft, consistent tint, including any optional Gitsigns word overlay.
+  do
+    local styled = {}
+    local function tint(original, target)
+      local mappings = {}
+      local groups = { DiffAdd = true, DiffChange = true, DiffText = true, DiffTextAdd = true, DiffDelete = true }
+      for _, name in ipairs { 'GitSignsAddLnInline', 'GitSignsChangeLnInline', 'GitSignsDeleteLnInline' } do groups[name] = true end
+      for entry in original:gmatch '[^,]+' do
+        if not groups[entry:match '^([^:]+):'] then mappings[#mappings + 1] = entry end
+      end
+      for name in pairs(groups) do mappings[#mappings + 1] = name .. ':' .. (name == 'DiffDelete' and 'DotfilesDiffGap' or target) end
+      table.sort(mappings)
+      return table.concat(mappings, ',')
+    end
+    local function refresh()
+      local targets = {}
+      for _, tab in ipairs(vim.api.nvim_list_tabpages()) do
+        local wins = vim.tbl_filter(function(win) return vim.wo[win].diff end, vim.api.nvim_tabpage_list_wins(tab))
+        if #wins == 2 then
+          table.sort(wins, function(a, b)
+            local pa, pb = vim.api.nvim_win_get_position(a), vim.api.nvim_win_get_position(b)
+            return pa[2] == pb[2] and pa[1] < pb[1] or pa[2] < pb[2]
+          end)
+          local function revision(win) return vim.api.nvim_buf_get_name(vim.api.nvim_win_get_buf(win)):match '^gitsigns://' ~= nil end
+          if revision(wins[2]) and not revision(wins[1]) then wins[1], wins[2] = wins[2], wins[1] end
+          targets[wins[1]], targets[wins[2]] = 'DotfilesDiffOld', 'DotfilesDiffNew'
+        end
+      end
+      -- A split can inherit our temporary mappings from its parent window.
+      local inherited = {}
+      for _, state in pairs(styled) do inherited[state.applied] = state.original end
+      for _, win in ipairs(vim.api.nvim_list_wins()) do
+        local current, state = vim.wo[win].winhighlight, styled[win]
+        if targets[win] then
+          if not state or current ~= state.applied then state = { original = inherited[current] or current } end
+          state.applied = tint(state.original, targets[win])
+          if current ~= state.applied then vim.wo[win].winhighlight = state.applied end
+          styled[win] = state
+        else
+          if state and current == state.applied then vim.wo[win].winhighlight = state.original
+          elseif not state and inherited[current] then vim.wo[win].winhighlight = inherited[current] end
+          styled[win] = nil
+        end
+      end
+      for win in pairs(styled) do
+        if not vim.api.nvim_win_is_valid(win) then styled[win] = nil end
+      end
+    end
+    local pending = false
+    local function schedule()
+      if pending then return end
+      pending = true
+      vim.schedule(function()
+        pending = false
+        refresh()
+      end)
+    end
+    local group = vim.api.nvim_create_augroup('dotfiles_diff_colors', { clear = true })
+    vim.api.nvim_create_autocmd({ 'WinEnter', 'BufWinEnter', 'WinResized', 'WinClosed', 'TabEnter' }, { group = group, callback = schedule })
+    vim.api.nvim_create_autocmd('OptionSet', { group = group, pattern = 'diff', callback = schedule })
+    schedule()
+  end
 
   -- Refine the inline display using its in-memory comparison lines. Gitsigns'
   -- built-in navigation then follows the same blocks that are being rendered.
@@ -680,8 +747,46 @@ do
     end
   end
 
-  -- Repository-wide review also works before opening a tracked file.
-  vim.keymap.set('n', '<leader>hh', function() gitsigns.diff(nil, nil, { diff = 'unified' }) end, { desc = 'git status and inline diff panel' })
+  -- Reuse each Windows repository review instead of rereading Git on every hh.
+  -- Closing it with q and reopening still requests a fresh review.
+  local git_reviews, opening_reviews = {}, {}
+  vim.keymap.set('n', '<leader>hh', function()
+    if not is_windows then
+      gitsigns.diff(nil, nil, { diff = 'unified' })
+      return
+    end
+    local file = vim.bo.buftype == '' and vim.api.nvim_buf_get_name(0) or ''
+    local root = (vim.b.gitsigns_status_dict or {}).root or (file ~= '' and vim.fs.root(file, '.git'))
+    if not root then
+      for path, review in pairs(git_reviews) do
+        if review.tab == vim.api.nvim_get_current_tabpage() then root = path; break end
+      end
+    end
+    root = root or vim.fs.root(vim.fn.getcwd(), '.git')
+    if not root then
+      gitsigns.diff(nil, nil, { diff = 'unified' })
+      return
+    end
+    root = vim.fs.normalize(vim.uv.fs_realpath(root) or root):lower()
+    local review = git_reviews[root]
+    if review and vim.api.nvim_win_is_valid(review.win) and vim.api.nvim_win_get_buf(review.win) == review.buf then
+      vim.api.nvim_set_current_win(review.win)
+      return
+    end
+    if opening_reviews[root] then return end
+    git_reviews[root], opening_reviews[root] = nil, true
+    gitsigns.diff(nil, nil, { diff = 'unified' }, function(err)
+      opening_reviews[root] = nil
+      if err then vim.notify(err, vim.log.levels.ERROR); return end
+      for _, win in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
+        local buf = vim.api.nvim_win_get_buf(win)
+        if vim.api.nvim_buf_get_name(buf):match '^gitsigns%-diff://' then
+          git_reviews[root] = { tab = vim.api.nvim_get_current_tabpage(), win = win, buf = buf }
+          break
+        end
+      end
+    end)
+  end, { desc = 'git status and inline diff panel' })
   vim.keymap.set('n', 'go', function()
     if vim.bo.buftype ~= '' or vim.api.nvim_buf_get_name(0) == '' then
       vim.notify('Move to the working file pane before opening it in a new tab.', vim.log.levels.INFO)
@@ -826,14 +931,22 @@ do
       TabLineFill = { bg = 'NONE' },
       WinBar = { fg = '#93c5fd', bg = 'NONE', bold = true },
       WinBarNC = { fg = '#94a3b8', bg = 'NONE' },
-      -- Native side-by-side diffs emphasize words without tinting the whole changed row.
-      DiffChange = { bg = 'NONE' },
-      DiffText = { fg = '#ffe3a1', bg = '#5a451b', bold = true },
-      DiffTextAdd = { fg = '#d4f8dd', bg = '#234f34', bold = true },
-      -- Keep word-level diff highlights distinct from the white cursor.
-      GitSignsAddInline = { fg = '#d4f8dd', bg = '#234f34', bold = true },
-      GitSignsChangeInline = { fg = '#ffe3a1', bg = '#5a451b', bold = true },
-      GitSignsDeleteInline = { fg = '#ffd7dc', bg = '#602a32', bold = true },
+      -- Muted block colors preserve syntax colors without bold word patches.
+      DotfilesDiffOld = { bg = '#322027' },
+      DotfilesDiffNew = { bg = '#1d3025' },
+      DotfilesDiffGap = { fg = '#718096', bg = 'NONE' },
+      DiffAdd = { link = 'DotfilesDiffNew' },
+      DiffDelete = { link = 'DotfilesDiffGap' },
+      DiffChange = { bg = '#272b32' },
+      DiffText = { link = 'DiffChange' },
+      DiffTextAdd = { link = 'DiffAdd' },
+      GitSignsAddPreview = { link = 'DotfilesDiffNew' },
+      GitSignsDeletePreview = { link = 'DotfilesDiffOld' },
+      GitSignsDeleteVirtLn = { link = 'DotfilesDiffOld' },
+      GitSignsAddInline = { link = 'DotfilesDiffNew' },
+      GitSignsChangeInline = { link = 'DotfilesDiffNew' },
+      GitSignsDeleteInline = { link = 'DotfilesDiffOld' },
+      GitSignsDeleteVirtLnInLine = { link = 'DotfilesDiffOld' },
       StatusLine = { bg = 'NONE' },
       StatusLineNC = { bg = 'NONE' },
       MiniStatuslineFilename = { fg = '#d4d4d4', bg = 'NONE' },
@@ -900,7 +1013,7 @@ do
   local statusline = require 'mini.statusline'
   -- Cache upstream commit counts; never run Git while drawing the bars.
   local branch_counts = {}
-  local branch_counts_cache_ms = is_windows and 30000 or 5000
+  local branch_counts_cache_ms = is_windows and 120000 or 5000
   local function refresh_branch_counts(buf, force)
     if not vim.api.nvim_buf_is_valid(buf) then return end
     local status = vim.b[buf].gitsigns_status_dict or {}
@@ -911,6 +1024,9 @@ do
     end
     local cached = branch_counts[root]
     vim.b[buf].git_ahead_behind = cached and cached.head == head and cached.text or ''
+    -- Hidden buffers can emit GitSignsUpdate; do not launch background queries
+    -- for repositories outside the current tab on Windows.
+    if is_windows and not force and vim.fn.bufwinid(buf) == -1 then return end
     local now = vim.uv.now()
     if cached and cached.head == head then
       if cached.running then
@@ -959,7 +1075,7 @@ do
     pattern = 'GitSignsUpdate',
     callback = function(ev) refresh_branch_counts(ev.data and ev.data.buffer or vim.api.nvim_get_current_buf()) end,
   })
-  vim.api.nvim_create_autocmd({ 'BufEnter', 'CursorHold' }, {
+  vim.api.nvim_create_autocmd(is_windows and { 'BufEnter' } or { 'BufEnter', 'CursorHold' }, {
     group = branch_group,
     callback = function(ev) refresh_branch_counts(ev.buf) end,
   })
@@ -967,7 +1083,8 @@ do
     group = branch_group,
     callback = function()
       local seen = {}
-      for _, buf in ipairs(vim.api.nvim_list_bufs()) do
+      local buffers = is_windows and vim.tbl_map(vim.api.nvim_win_get_buf, vim.api.nvim_tabpage_list_wins(0)) or vim.api.nvim_list_bufs()
+      for _, buf in ipairs(buffers) do
         local root = (vim.b[buf].gitsigns_status_dict or {}).root
         if root and not seen[root] then
           seen[root] = true
