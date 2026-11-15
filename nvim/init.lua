@@ -712,6 +712,84 @@ do
     schedule()
   end
 
+  -- Match split diffs' 'diffopt' inline:word in Gitsigns' word highlights:
+  -- darken whole changed words on both sides instead of single characters,
+  -- and join changes split by a short non-word gap, using Nvim's rules
+  -- (diff_refine_inline_word_highlight in src/nvim/diff.c).
+  do
+    local diff_int = require 'gitsigns.diff_int'
+    local word_gap = 5
+
+    -- Like Nvim's inline:word, join word characters (charclass 2, including
+    -- accented letters); blanks, punctuation, CJK and emoji stand alone.
+    local function split_words(line)
+      local spans, col, word = {}, 1, false
+      while col <= #line do
+        local last = col + vim.str_utf_end(line, col)
+        local is_word = vim.fn.charclass(line:sub(col, last)) == 2
+        if is_word and word then spans[#spans][2] = last else spans[#spans + 1] = { col, last } end
+        word, col = is_word, last + 1
+      end
+      return spans
+    end
+
+    local function has_word(text)
+      for _, span in ipairs(split_words(text)) do
+        if vim.fn.charclass(text:sub(span[1], span[2])) == 2 then return true end
+      end
+      return false
+    end
+
+    local function join_words(line, spans)
+      local words = {}
+      for i, span in ipairs(spans) do words[i] = line:sub(span[1], span[2]) .. '\n' end
+      return table.concat(words)
+    end
+
+    -- Byte range [first, stop) covering words start .. start + count - 1.
+    local function byte_range(spans, start, count)
+      if count == 0 then
+        local col = start == 0 and 1 or spans[start][2] + 1
+        return col, col
+      end
+      return spans[start][1], spans[start + count - 1][2] + 1
+    end
+
+    diff_int.run_word_diff = function(removed, added)
+      local rems, adds = {}, {}
+      if #removed ~= #added then return rems, adds end
+      local algorithm = require('gitsigns.config').config.diff_opts.algorithm
+      for i = 1, #removed do
+        local old, new = removed[i], added[i]
+        local old_spans, new_spans = split_words(old), split_words(new)
+        local regions = {}
+        local parts = vim.text.diff(join_words(old, old_spans), join_words(new, new_spans),
+          { result_type = 'indices', algorithm = algorithm, indent_heuristic = true })
+        for _, part in ipairs(parts) do
+          local os, oe = byte_range(old_spans, part[1], part[2])
+          local ns, ne = byte_range(new_spans, part[3], part[4])
+          local previous = regions[#regions]
+          -- Unchanged text is identical on both sides, so test the old side.
+          -- Join a 1-5 byte non-word gap when the changes are at least twice as long.
+          local gap = previous and os - previous[2] or 0
+          if gap > 0 and gap <= word_gap and not has_word(old:sub(previous[2], os - 1))
+            and (oe - previous[1]) + (ne - previous[3]) - 2 * gap >= 2 * gap then
+            previous[2], previous[4] = oe, ne
+          else
+            regions[#regions + 1] = { os, oe, ns, ne }
+          end
+        end
+        for _, region in ipairs(regions) do
+          local os, oe, ns, ne = unpack(region)
+          local kind = os == oe and 'add' or ns == ne and 'delete' or 'change'
+          rems[#rems + 1] = { i, kind, os, oe }
+          adds[#adds + 1] = { i, kind, ns, ne }
+        end
+      end
+      return rems, adds
+    end
+  end
+
   -- Show each change block as all removed lines, then all added lines, like
   -- VS Code. Linematch splits a block into adjacent line-pair hunks; rejoin
   -- them, and join across gaps of only a few unchanged characters (a blank
