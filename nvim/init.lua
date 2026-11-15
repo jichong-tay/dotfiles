@@ -581,16 +581,15 @@ do
     end,
   }
 
-  -- Refine navigation within inline reviews using their in-memory diff lines.
-  -- Cache per displayed diff; staging/reset still use Gitsigns' original hunks.
+  -- Refine the inline display using its in-memory comparison lines. Gitsigns'
+  -- built-in navigation then follows the same blocks that are being rendered.
   do
-    local nav_hunk = gitsigns.nav_hunk
     local unified = require 'gitsigns.unified'
     local hunks = require 'gitsigns.hunks'
-    local sections = setmetatable({}, { __mode = 'k' })
+    local preview = require 'gitsigns.hunk_preview'
+    local capture = preview.capture_removed_hunks_from_source
 
-    local function inline_sections(view)
-      if sections[view.hunks] then return sections[view.hunks] end
+    local function inline_sections(display_hunks)
       local result = {}
       local config = require('gitsigns.config').config.diff_opts
       local display_limit = type(config.linematch) == 'number' and config.linematch or 0
@@ -601,65 +600,40 @@ do
       for _, key in ipairs({ 'algorithm', 'indent_heuristic', 'ignore_whitespace', 'ignore_whitespace_change', 'ignore_whitespace_change_at_eol', 'ignore_blank_lines', 'ignore_cr_at_eol' }) do
         opts[key] = config[key]
       end
-      for _, hunk in ipairs(view.hunks) do
+      for _, hunk in ipairs(display_hunks) do
         local removed, added = hunk.removed.count, hunk.added.count
         local work = removed * added * math.min(removed, added)
         if hunk.type == 'change' and removed + added > display_limit and work <= matching_budget then
           matching_budget = matching_budget - work
           local refined = vim.text.diff(table.concat(hunk.removed.lines, '\n') .. '\n', table.concat(hunk.added.lines, '\n') .. '\n', opts)
           for _, part in ipairs(refined) do
-            result[#result + 1] = hunks.create_hunk(hunk.removed.start + part[1] - 1, part[2], hunk.added.start + part[3] - 1, part[4])
+            local section = hunks.create_hunk(hunk.removed.start + part[1] - 1, part[2], hunk.added.start + part[3] - 1, part[4])
+            for _, side in ipairs({ 'removed', 'added' }) do
+              local node, original = section[side], hunk[side]
+              if node.count > 0 then
+                local start = side == 'removed' and part[1] or part[3]
+                node.lines = vim.list_slice(original.lines, start, start + node.count - 1)
+                node.no_nl_at_eof = original.no_nl_at_eof and start + node.count - 1 == original.count or nil
+              end
+            end
+            result[#result + 1] = section
           end
         else
           result[#result + 1] = hunk
         end
       end
-      sections[view.hunks] = result
       return result
     end
 
-    -- The status panel installs its own ]c/[c mappings and calls this public
-    -- action, so the same behavior also applies to Space t i and go reviews.
-    gitsigns.nav_hunk = function(direction, opts, callback)
-      local view = unified.get_view()
-      if not view or not view.hunks or opts or callback or (direction ~= 'next' and direction ~= 'prev') then
-        return nav_hunk(direction, opts, callback)
+    preview.capture_removed_hunks_from_source = function(buf, base, display_hunks, opts)
+      if unified.is_active(buf, base) and opts.line_hl == 'GitSignsDeleteVirtLn' then
+        local refined = inline_sections(display_hunks)
+        -- This array belongs to the unified view. The ordinary buffer's
+        -- staging/reset hunks are kept separately in Gitsigns' cache.
+        for i = #display_hunks, 1, -1 do display_hunks[i] = nil end
+        vim.list_extend(display_hunks, refined)
       end
-      local targets = inline_sections(view)
-      local line, index = vim.api.nvim_win_get_cursor(0)[1], nil
-      local line_count = vim.api.nvim_buf_line_count(view.buf)
-      local message = vim.o.shortmess:find 'S' == nil
-      if #targets == 0 then
-        if message then vim.api.nvim_echo({ { 'No changes', 'WarningMsg' } }, false, {}) end
-        return
-      end
-      for _ = 1, vim.v.count1 do
-        local next_index = hunks.find_nearest_hunk(line, targets, direction, vim.o.wrapscan, line_count)
-        if not next_index then
-          if message then vim.api.nvim_echo({ { 'No more changes', 'WarningMsg' } }, false, {}) end
-          break
-        end
-        index = next_index
-        line = direction == 'next' and targets[index].added.start or targets[index].vend
-        line = math.max(1, math.min(line, line_count))
-      end
-      if not index then return end
-      vim.cmd "normal! m'"
-      local text = vim.api.nvim_buf_get_lines(view.buf, line - 1, line, false)[1]
-      vim.api.nvim_win_set_cursor(0, { line, #(text:match '^%s*') })
-      if vim.tbl_contains(vim.opt.foldopen:get(), 'search') then vim.cmd 'silent! foldopen!' end
-      unified.reveal()
-      local popup = require 'gitsigns.popup'
-      if popup.is_open 'hunk' then
-        local win = vim.api.nvim_get_current_win()
-        vim.schedule(function()
-          if vim.api.nvim_get_current_win() == win and unified.get_view() == view then
-            popup.close 'hunk'
-            gitsigns.preview_hunk()
-          end
-        end)
-      end
-      if message then vim.api.nvim_echo({ { ('Section %d of %d'):format(index, #targets), 'None' } }, false, {}) end
+      return capture(buf, base, display_hunks, opts)
     end
   end
 
