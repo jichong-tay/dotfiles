@@ -591,6 +591,22 @@ do
 
     local function inline_sections(display_hunks)
       local result = {}
+      local function append(section, aligned)
+        local removed, added = section.removed, section.added
+        if aligned and section.type == 'change' and removed.count == added.count and added.count > 1 then
+          -- Place each old line directly above its corresponding new line.
+          for offset = 0, added.count - 1 do
+            local pair = hunks.create_hunk(removed.start + offset, 1, added.start + offset, 1)
+            for _, side in ipairs({ 'removed', 'added' }) do
+              pair[side].lines = { section[side].lines[offset + 1] }
+              pair[side].no_nl_at_eof = offset == added.count - 1 and section[side].no_nl_at_eof or nil
+            end
+            result[#result + 1] = pair
+          end
+        else
+          result[#result + 1] = section
+        end
+      end
       local config = require('gitsigns.config').config.diff_opts
       local display_limit = type(config.linematch) == 'number' and config.linematch or 0
       -- Line matching grows rapidly with both sides of a replacement. Bound
@@ -616,10 +632,10 @@ do
                 node.no_nl_at_eof = original.no_nl_at_eof and start + node.count - 1 == original.count or nil
               end
             end
-            result[#result + 1] = section
+            append(section, true)
           end
         else
-          result[#result + 1] = hunk
+          append(hunk, removed + added <= display_limit)
         end
       end
       return result
