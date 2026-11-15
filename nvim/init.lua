@@ -381,6 +381,153 @@ do
   -- Adds git related signs to the gutter, as well as utilities for managing changes
   vim.pack.add { gh 'lewis6991/gitsigns.nvim' }
   local gitsigns = require 'gitsigns'
+  -- Neovim 0.12 cannot wrap virtual lines. Adapt Gitsigns' deleted-line
+  -- renderer here so the plugin checkout and ordinary buffers stay untouched.
+  do
+    local deleted = require 'gitsigns.deleted_preview'
+    local virt = require 'gitsigns.render.virt'
+    local place = deleted.place_inline_preview_lines
+    local wrapped_cache = setmetatable({}, { __mode = 'k' })
+    local previews = {}
+
+    local function wrap_deleted_line(chunks, text, source_gutter, gutter, width, tabstop, word_wrap, numbers)
+      local prefix, tokens = {}, {}
+      local prefix_width, source_bytes, source_column = 0, 0, 0
+      for _, chunk in ipairs(chunks) do
+        for _, char in ipairs(vim.fn.split(chunk[1], [[\zs]])) do
+          if prefix_width < source_gutter then
+            virt.add_chunk(prefix, char, chunk[2])
+            prefix_width = prefix_width + vim.fn.strdisplaywidth(char)
+          elseif source_bytes < #text then
+            local cells = char == '\t' and (tabstop - source_column % tabstop) or vim.fn.strdisplaywidth(char)
+            if char == '\t' then
+              for _ = 1, cells do tokens[#tokens + 1] = { ' ', chunk[2], 1 } end
+            else
+              tokens[#tokens + 1] = { char, chunk[2], cells }
+            end
+            source_bytes, source_column = source_bytes + #char, source_column + cells
+          else
+            break -- Discard Gitsigns' synthetic end-of-line padding.
+          end
+        end
+      end
+      -- A retained single-hunk preview can outlive a gutter-width change.
+      if source_gutter ~= gutter then
+        local resized, skip = {}, math.max(source_gutter - gutter, 0)
+        if numbers then
+          for _, chunk in ipairs(prefix) do
+            for _, char in ipairs(vim.fn.split(chunk[1], [[\zs]])) do
+              if skip > 0 then skip = skip - vim.fn.strdisplaywidth(char)
+              else virt.add_chunk(resized, char, chunk[2]) end
+            end
+          end
+        end
+        local padding = numbers and math.max(gutter - source_gutter, 0) or gutter
+        table.insert(resized, 1, { string.rep(' ', padding), 'GitSignsVirtLnum' })
+        prefix = resized
+      end
+      local rows, first = {}, 1
+      local available = math.max(width - gutter, 1)
+      repeat
+        local last, cells, space = first - 1, 0, nil
+        while last < #tokens and cells + tokens[last + 1][3] <= available do
+          last = last + 1
+          cells = cells + tokens[last][3]
+          if tokens[last][1]:match '^%s+$' then space = last end
+        end
+        if word_wrap and last < #tokens and space then last = space end
+        last = math.max(last, first) -- A single wide character may exceed a tiny pane.
+        local row = #rows == 0 and vim.deepcopy(prefix) or { { string.rep(' ', gutter), 'GitSignsVirtLnum' } }
+        cells = 0
+        for i = first, math.min(last, #tokens) do
+          virt.add_chunk(row, tokens[i][1], tokens[i][2])
+          cells = cells + tokens[i][3]
+        end
+        local eol_hl = row[#row] and row[#row][2] or 'GitSignsDeleteVirtLn'
+        virt.add_chunk(row, string.rep(' ', math.max(available - cells, 0)), eol_hl)
+        rows[#rows + 1], first = row, last + 1
+      until first > #tokens
+      return rows
+    end
+
+    local function reflow(preview)
+      local win, buf = preview.win, preview.buf
+      if not vim.api.nvim_win_is_valid(win) or not vim.api.nvim_buf_is_valid(buf)
+        or vim.api.nvim_win_get_buf(win) ~= buf then return false end
+      local mark = vim.api.nvim_buf_get_extmark_by_id(buf, preview.ns, preview.id, {})
+      if #mark == 0 then return false end
+      local info = vim.fn.getwininfo(win)[1]
+      local width = vim.api.nvim_win_get_width(win) - (preview.leftcol and 0 or info.textoff)
+      local gutter = preview.numbered and info.textoff or 0
+      local tabstop, word_wrap = vim.bo[buf].tabstop, vim.wo[win].linebreak
+      local numbers = vim.wo[win].number or vim.wo[win].relativenumber
+      local key = table.concat({ win, width, gutter, tabstop, tostring(word_wrap), tostring(numbers), preview.start }, ':')
+      local cached = preview.source and wrapped_cache[preview.source]
+      local rows = preview.raw
+      if vim.wo[win].wrap then
+        if cached and cached.key == key then
+          rows = cached.rows
+        else
+          rows = {}
+          for i, chunks in ipairs(preview.raw) do
+            vim.list_extend(rows, wrap_deleted_line(chunks, preview.texts[i] or '', preview.gutter, gutter, width, tabstop, word_wrap, numbers))
+          end
+          if preview.source then wrapped_cache[preview.source] = { key = key, rows = rows } end
+        end
+      end
+      vim.api.nvim_buf_set_extmark(buf, preview.ns, mark[1], mark[2], {
+        id = preview.id,
+        virt_lines = rows,
+        virt_lines_above = preview.above,
+        virt_lines_leftcol = preview.leftcol,
+        virt_lines_overflow = 'scroll',
+      })
+      return true
+    end
+
+    deleted.place_inline_preview_lines = function(buf, ns, hunk, staged, opts)
+      local id = place(buf, ns, hunk, staged, opts)
+      if not opts or not opts.win or not vim.api.nvim_win_is_valid(opts.win) then return id end
+      local mark = vim.api.nvim_buf_get_extmark_by_id(buf, ns, id, { details = true })
+      local texts = hunk.removed.lines
+      if opts.lines then
+        texts = {}
+        for _, line in ipairs(opts.lines) do texts[#texts + 1] = line.text end
+      end
+      local preview = {
+        win = opts.win, buf = buf, ns = ns, id = id, raw = mark[3].virt_lines,
+        above = mark[3].virt_lines_above, leftcol = mark[3].virt_lines_leftcol,
+        numbered = opts.lno_hl, texts = texts, source = opts.lines, start = hunk.removed.start,
+        gutter = opts.lno_hl and vim.fn.getwininfo(opts.win)[1].textoff or 0,
+      }
+      reflow(preview)
+      -- Unified views already redraw for each window. Single-hunk previews
+      -- need an explicit reflow when their pane is resized or wrapping changes.
+      if not opts.lines then previews[opts.win] = preview end
+      return id
+    end
+    local group = vim.api.nvim_create_augroup('GitDeletedLineWrap', { clear = true })
+    vim.api.nvim_create_autocmd('WinResized', {
+      group = group,
+      callback = function()
+        for win, preview in pairs(previews) do
+          if not reflow(preview) then previews[win] = nil end
+        end
+      end,
+    })
+    vim.api.nvim_create_autocmd('OptionSet', {
+      group = group,
+      pattern = { 'wrap', 'linebreak', 'tabstop', 'number', 'relativenumber', 'numberwidth', 'signcolumn' },
+      callback = function()
+        local win = vim.api.nvim_get_current_win()
+        if previews[win] and not reflow(previews[win]) then previews[win] = nil end
+      end,
+    })
+    vim.api.nvim_create_autocmd('WinClosed', {
+      group = group,
+      callback = function(ev) previews[tonumber(ev.match)] = nil end,
+    })
+  end
   -- Align similar lines in diff splits and highlight individual changed words.
   vim.opt.diffopt:append { 'algorithm:histogram', 'linematch:60', 'inline:word' }
   gitsigns.setup {
@@ -433,6 +580,88 @@ do
       vim.keymap.set({ 'o', 'x' }, 'ih', gitsigns.select_hunk, { desc = 'text object [i]nside [h]unk', buf = bufnr })
     end,
   }
+
+  -- Refine navigation within inline reviews using their in-memory diff lines.
+  -- Cache per displayed diff; staging/reset still use Gitsigns' original hunks.
+  do
+    local nav_hunk = gitsigns.nav_hunk
+    local unified = require 'gitsigns.unified'
+    local hunks = require 'gitsigns.hunks'
+    local sections = setmetatable({}, { __mode = 'k' })
+
+    local function inline_sections(view)
+      if sections[view.hunks] then return sections[view.hunks] end
+      local result = {}
+      local config = require('gitsigns.config').config.diff_opts
+      local display_limit = type(config.linematch) == 'number' and config.linematch or 0
+      -- Line matching grows rapidly with both sides of a replacement. Bound
+      -- the estimated work per diff so large reviews retain responsive jumps.
+      local matching_budget = 500000
+      local opts = { result_type = 'indices', linematch = true }
+      for _, key in ipairs({ 'algorithm', 'indent_heuristic', 'ignore_whitespace', 'ignore_whitespace_change', 'ignore_whitespace_change_at_eol', 'ignore_blank_lines', 'ignore_cr_at_eol' }) do
+        opts[key] = config[key]
+      end
+      for _, hunk in ipairs(view.hunks) do
+        local removed, added = hunk.removed.count, hunk.added.count
+        local work = removed * added * math.min(removed, added)
+        if hunk.type == 'change' and removed + added > display_limit and work <= matching_budget then
+          matching_budget = matching_budget - work
+          local refined = vim.text.diff(table.concat(hunk.removed.lines, '\n') .. '\n', table.concat(hunk.added.lines, '\n') .. '\n', opts)
+          for _, part in ipairs(refined) do
+            result[#result + 1] = hunks.create_hunk(hunk.removed.start + part[1] - 1, part[2], hunk.added.start + part[3] - 1, part[4])
+          end
+        else
+          result[#result + 1] = hunk
+        end
+      end
+      sections[view.hunks] = result
+      return result
+    end
+
+    -- The status panel installs its own ]c/[c mappings and calls this public
+    -- action, so the same behavior also applies to Space t i and go reviews.
+    gitsigns.nav_hunk = function(direction, opts, callback)
+      local view = unified.get_view()
+      if not view or not view.hunks or opts or callback or (direction ~= 'next' and direction ~= 'prev') then
+        return nav_hunk(direction, opts, callback)
+      end
+      local targets = inline_sections(view)
+      local line, index = vim.api.nvim_win_get_cursor(0)[1], nil
+      local line_count = vim.api.nvim_buf_line_count(view.buf)
+      local message = vim.o.shortmess:find 'S' == nil
+      if #targets == 0 then
+        if message then vim.api.nvim_echo({ { 'No changes', 'WarningMsg' } }, false, {}) end
+        return
+      end
+      for _ = 1, vim.v.count1 do
+        local next_index = hunks.find_nearest_hunk(line, targets, direction, vim.o.wrapscan, line_count)
+        if not next_index then
+          if message then vim.api.nvim_echo({ { 'No more changes', 'WarningMsg' } }, false, {}) end
+          break
+        end
+        index = next_index
+        line = direction == 'next' and targets[index].added.start or targets[index].vend
+        line = math.max(1, math.min(line, line_count))
+      end
+      if not index then return end
+      vim.cmd "normal! m'"
+      local text = vim.api.nvim_buf_get_lines(view.buf, line - 1, line, false)[1]
+      vim.api.nvim_win_set_cursor(0, { line, #(text:match '^%s*') })
+      if vim.tbl_contains(vim.opt.foldopen:get(), 'search') then vim.cmd 'silent! foldopen!' end
+      unified.reveal()
+      local popup = require 'gitsigns.popup'
+      if popup.is_open 'hunk' then
+        local win = vim.api.nvim_get_current_win()
+        vim.schedule(function()
+          if vim.api.nvim_get_current_win() == win and unified.get_view() == view then
+            popup.close 'hunk'
+            gitsigns.preview_hunk()
+          end
+        end)
+      end
+      if message then vim.api.nvim_echo({ { ('Section %d of %d'):format(index, #targets), 'None' } }, false, {}) end
+    end
+  end
 
   -- Repository-wide review also works before opening a tracked file.
   vim.keymap.set('n', '<leader>hh', function() gitsigns.diff(nil, nil, { diff = 'unified' }) end, { desc = 'git status and inline diff panel' })
@@ -528,6 +757,7 @@ do
   -- Useful plugin to show you pending keybinds.
   vim.pack.add { gh 'folke/which-key.nvim' }
   local leader_order = { h = 1, t = 2, s = 3, ['<Space>'] = 4, ['/'] = 5, q = 6, f = 7 }
+  local git_order = { h = 1, f = 2 }
   local toggle_order = { i = 1, t = 2, b = 3, m = 4, w = 5, h = 6 }
   local terminal_order = { t = 1, s = 2, n = 3 }
   local leader_prefix = vim.fn.keytrans(vim.g.mapleader)
@@ -541,6 +771,8 @@ do
         local order
         if parent == leader_prefix then
           order = leader_order
+        elseif parent == leader_prefix .. 'h' then
+          order = git_order
         elseif parent == leader_prefix .. 't' then
           order = toggle_order
         elseif parent == leader_prefix .. 'tt' then

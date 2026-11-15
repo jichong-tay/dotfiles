@@ -189,9 +189,11 @@ Use **Space h h** from a repository directory to open the Git status and diff pa
 
 Side-by-side diffs show the base on the left and your current file on the right. Similar lines are aligned and changed words highlighted. Unchanged lines between edits remain context; longer unchanged sections may be folded. Press `zo` to expand a fold. To close the comparison, move to the left pane with **Ctrl+w h** and run `:close`; do this before opening the inline view. Press **Space t i** again to close the inline view.
 
-Within the **Space t i** inline view, **]c** and **[c** navigate both staged and unstaged changes shown against `HEAD`. Outside that view or a side-by-side comparison, they navigate unstaged changes.
+Within inline reviews (**Space h h**, **Space t i**, and **go**), **]c** and **[c** navigate both staged and unstaged changes shown against `HEAD`, with separate stops for modified sections and adjacent added sections inside a larger change block. Navigation boundaries are calculated from the loaded comparison lines and cached until the displayed diff changes; jumping does not launch extra Git commands. Refinement is capped to keep large reviews responsive; blocks beyond the work budget retain standard hunk boundaries. Counts such as **2]c** and the `wrapscan` setting are respected. Outside inline reviews or a side-by-side comparison, these keys keep their usual unstaged-change navigation.
 
 The **Space h h** review opens with two panes: the file list and an inline diff against `HEAD` showing staged and unstaged changes. Use **Ctrl+h / Ctrl+l** to move left/right, or **Ctrl+w**, then **w**, to cycle panes. For separate Neovim tabs, use **gt / gT** for next/previous. In the file list, **Enter** opens a file, **s / u** stage/unstage it, **gu** switches between inline and side-by-side layouts, **g?** shows help, and **q** closes the review. **]f / [f** move between changed files from the list or file panes.
+
+Deleted lines wrap inside the inline views (**Space h h**, **Space t i**, **go**, and **Space h i**) when `wrap` is enabled. With `linebreak` enabled, wrapping prefers spaces; a word wider than the pane still splits. Highlights are preserved, the original line number appears only on the first row, and resizing reflows the preview. This custom adapter in `init.lua` works with Neovim 0.12 and the pinned Gitsigns version; it does not alter the file or the plugin checkout. Use `:setlocal nowrap` to restore horizontal scrolling.
 
 To edit at the line you are reviewing, put the cursor on that line in the working-file pane and press **go**. The new tab starts with the inline diff against `HEAD` enabled (staged and unstaged changes); press **Space t i** if you want to hide it. The Git review stays open in its original tab; use **gT** to return or `:tabclose` to close the new editing tab. In the file list, **o** opens the selected file in a new tab; **go** is for preserving your cursor position in the file pane.
 
@@ -209,7 +211,7 @@ Git review panes use readable labels such as `Git changes`, `src/file.lua [HEAD]
 
 In Normal mode, press **Space t t** to open the Terminal submenu, then choose **t**, **s**, or **n**:
 
-Which-key lists the main **Space** menu in the order **h, t, s, Space, /, q, f**, the **Space t** menu in the order **i, t, b, m, w, h** (when those actions are available), and the Terminal submenu in the order **t, s, n**. Other menus retain their default sorting.
+Which-key lists the main **Space** menu in the order **h, t, s, Space, /, q, f**, the **Space h** menu with **h** first and **f** second, the **Space t** menu in the order **i, t, b, m, w, h** (when those actions are available), and the Terminal submenu in the order **t, s, n**. Other entries retain their default sorting.
 
 | Shortcut | Action |
 | --- | --- |
