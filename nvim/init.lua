@@ -767,6 +767,15 @@ do
       topdelete = { text = '‾' }, ---@diagnostic disable-line: missing-fields
       changedelete = { text = '~' }, ---@diagnostic disable-line: missing-fields
     },
+    -- Staged changes all use a bar; its color still shows the kind of change.
+    -- The default staged deletion (▁) is hard to tell from an unstaged _.
+    signs_staged = {
+      add = { text = '┃' }, ---@diagnostic disable-line: missing-fields
+      change = { text = '┃' }, ---@diagnostic disable-line: missing-fields
+      delete = { text = '┃' }, ---@diagnostic disable-line: missing-fields
+      topdelete = { text = '┃' }, ---@diagnostic disable-line: missing-fields
+      changedelete = { text = '┃' }, ---@diagnostic disable-line: missing-fields
+    },
     -- gitsigns.nvim's recommended keymaps:
     on_attach = function(bufnr)
       -- Navigation
