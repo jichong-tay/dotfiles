@@ -823,6 +823,10 @@ do
       TabLineFill = { bg = 'NONE' },
       WinBar = { fg = '#93c5fd', bg = 'NONE', bold = true },
       WinBarNC = { fg = '#94a3b8', bg = 'NONE' },
+      -- Native side-by-side diffs emphasize words without tinting the whole changed row.
+      DiffChange = { bg = 'NONE' },
+      DiffText = { fg = '#ffe3a1', bg = '#5a451b', bold = true },
+      DiffTextAdd = { fg = '#d4f8dd', bg = '#234f34', bold = true },
       -- Keep word-level diff highlights distinct from the white cursor.
       GitSignsAddInline = { fg = '#d4f8dd', bg = '#234f34', bold = true },
       GitSignsChangeInline = { fg = '#ffe3a1', bg = '#5a451b', bold = true },
