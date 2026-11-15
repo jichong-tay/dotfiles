@@ -587,8 +587,62 @@ do
     end,
   }
 
+  -- Whole-file split toggle: keep unchanged context expanded while reviewing.
+  local full_splits = {}
+  local function restore_full_split(state)
+    if state.restored then return end
+    state.restored = true
+    for _, win in ipairs { state.source, state.base } do
+      full_splits[win] = nil
+      if vim.api.nvim_win_is_valid(win) then
+        vim.api.nvim_win_call(win, function() vim.cmd 'diffoff' end)
+        vim.wo[win].foldenable = state.foldenable
+      end
+    end
+  end
+  vim.keymap.set('n', '<leader>td', function()
+    local win = vim.api.nvim_get_current_win()
+    local state = full_splits[win]
+    if state then
+      if not state.base then return end -- A slow Git read is still opening it.
+      if vim.api.nvim_win_is_valid(state.base) then vim.api.nvim_win_close(state.base, false) end
+      restore_full_split(state)
+      if vim.api.nvim_win_is_valid(state.source) then vim.api.nvim_set_current_win(state.source) end
+      return
+    end
+    local existing = {}
+    for _, other in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
+      if vim.wo[other].diff then
+        vim.notify('Close the existing split comparison before using Space t d.', vim.log.levels.INFO)
+        return
+      end
+      existing[other] = true
+    end
+    state = { source = win, tab = vim.api.nvim_get_current_tabpage(), foldenable = vim.wo.foldenable }
+    full_splits[win] = state
+    gitsigns.diffthis('HEAD', { vertical = true, unified = false }, function(err)
+      if err or not vim.api.nvim_win_is_valid(win) then
+        restore_full_split(state)
+        if err then vim.notify(err, vim.log.levels.ERROR) end
+        return
+      end
+      for _, other in ipairs(vim.api.nvim_tabpage_list_wins(state.tab)) do
+        if not existing[other] and vim.wo[other].diff then state.base = other; break end
+      end
+      if not state.base then full_splits[win] = nil; return end
+      full_splits[state.base] = state
+      vim.wo[win].foldenable = false
+      vim.wo[state.base].foldenable = false
+      vim.api.nvim_create_autocmd('WinClosed', {
+        pattern = { tostring(win), tostring(state.base) },
+        once = true,
+        callback = function() vim.schedule(function() restore_full_split(state) end) end,
+      })
+    end)
+  end, { desc = '[T]oggle whole-file side-by-side [d]iff (HEAD)' })
+
   -- Native diff groups describe relative changes, not old/new sides. Give each
-  -- pane a soft, consistent tint, including any optional Gitsigns word overlay.
+  -- pane a consistent tint, with a darker shade for its changed words.
   do
     local styled = {}
     local function tint(original, target)
@@ -598,7 +652,12 @@ do
       for entry in original:gmatch '[^,]+' do
         if not groups[entry:match '^([^:]+):'] then mappings[#mappings + 1] = entry end
       end
-      for name in pairs(groups) do mappings[#mappings + 1] = name .. ':' .. (name == 'DiffDelete' and 'DotfilesDiffGap' or target) end
+      for name in pairs(groups) do
+        local highlight = name == 'DiffDelete' and 'DotfilesDiffGap'
+          or (name == 'DiffAdd' or name == 'DiffChange') and target
+          or target .. 'Text'
+        mappings[#mappings + 1] = name .. ':' .. highlight
+      end
       table.sort(mappings)
       return table.concat(mappings, ',')
     end
@@ -880,7 +939,7 @@ do
   vim.pack.add { gh 'folke/which-key.nvim' }
   local leader_order = { h = 1, t = 2, s = 3, ['<Space>'] = 4, ['/'] = 5, q = 6, f = 7 }
   local git_order = { h = 1, f = 2 }
-  local toggle_order = { i = 1, t = 2, b = 3, m = 4, w = 5, h = 6 }
+  local toggle_order = { i = 1, d = 2, t = 3, b = 4, m = 5, w = 6, h = 7 }
   local terminal_order = { t = 1, s = 2, n = 3 }
   local leader_prefix = vim.fn.keytrans(vim.g.mapleader)
   require('which-key').setup {
@@ -931,22 +990,24 @@ do
       TabLineFill = { bg = 'NONE' },
       WinBar = { fg = '#93c5fd', bg = 'NONE', bold = true },
       WinBarNC = { fg = '#94a3b8', bg = 'NONE' },
-      -- Muted block colors preserve syntax colors without bold word patches.
+      -- Muted line backgrounds and darker changed words preserve syntax colors.
       DotfilesDiffOld = { bg = '#322027' },
       DotfilesDiffNew = { bg = '#1d3025' },
+      DotfilesDiffOldText = { bg = '#241016' },
+      DotfilesDiffNewText = { bg = '#102318' },
       DotfilesDiffGap = { fg = '#718096', bg = 'NONE' },
       DiffAdd = { link = 'DotfilesDiffNew' },
       DiffDelete = { link = 'DotfilesDiffGap' },
       DiffChange = { bg = '#272b32' },
-      DiffText = { link = 'DiffChange' },
-      DiffTextAdd = { link = 'DiffAdd' },
+      DiffText = { bg = '#1c1f25' },
+      DiffTextAdd = { link = 'DotfilesDiffNewText' },
       GitSignsAddPreview = { link = 'DotfilesDiffNew' },
       GitSignsDeletePreview = { link = 'DotfilesDiffOld' },
       GitSignsDeleteVirtLn = { link = 'DotfilesDiffOld' },
-      GitSignsAddInline = { link = 'DotfilesDiffNew' },
-      GitSignsChangeInline = { link = 'DotfilesDiffNew' },
-      GitSignsDeleteInline = { link = 'DotfilesDiffOld' },
-      GitSignsDeleteVirtLnInLine = { link = 'DotfilesDiffOld' },
+      GitSignsAddInline = { link = 'DotfilesDiffNewText' },
+      GitSignsChangeInline = { link = 'DotfilesDiffNewText' },
+      GitSignsDeleteInline = { link = 'DotfilesDiffOldText' },
+      GitSignsDeleteVirtLnInLine = { link = 'DotfilesDiffOldText' },
       StatusLine = { bg = 'NONE' },
       StatusLineNC = { bg = 'NONE' },
       MiniStatuslineFilename = { fg = '#d4d4d4', bg = 'NONE' },
