@@ -126,6 +126,8 @@ do
 
   -- Enable break indent
   vim.o.breakindent = true
+  -- Wrap at word boundaries instead of splitting words across display lines.
+  vim.o.linebreak = true
 
   -- Enable undo/redo changes even after closing and reopening a file
   vim.o.undofile = true
@@ -645,6 +647,7 @@ do
   local statusline = require 'mini.statusline'
   -- Cache upstream commit counts; never run Git while drawing the bars.
   local branch_counts = {}
+  local branch_counts_cache_ms = is_windows and 30000 or 5000
   local function refresh_branch_counts(buf, force)
     if not vim.api.nvim_buf_is_valid(buf) then return end
     local status = vim.b[buf].gitsigns_status_dict or {}
@@ -661,7 +664,7 @@ do
         cached.refresh = cached.refresh or force
         return
       end
-      if not force and now - cached.time < 5000 then return end
+      if not force and now - cached.time < branch_counts_cache_ms then return end
     end
     local entry = { head = head, text = vim.b[buf].git_ahead_behind, time = now, running = true }
     branch_counts[root] = entry
@@ -674,6 +677,7 @@ do
         local behind_label = vim.g.have_nerd_font and '' or 'behind'
         entry.text = ahead and ('%s %s  %s %s'):format(ahead_label, ahead, behind_label, behind) or ''
         entry.running = false
+        entry.time = vim.uv.now()
         local refresh_buf
         for _, other in ipairs(vim.api.nvim_list_bufs()) do
           local other_status = vim.b[other].gitsigns_status_dict or {}
@@ -689,6 +693,13 @@ do
     local ok = pcall(vim.system, { 'git', 'rev-list', '--left-right', '--count', 'HEAD...@{upstream}' }, { cwd = root, text = true, timeout = 5000 }, on_result)
     if not ok then on_result { code = -1 } end
   end
+  vim.keymap.set('n', '<leader>hf', function()
+    if not (vim.b.gitsigns_status_dict or {}).root then
+      vim.notify('Open a tracked file in the repository to refresh its commit counts.', vim.log.levels.INFO)
+      return
+    end
+    refresh_branch_counts(vim.api.nvim_get_current_buf(), true)
+  end, { desc = 'git [f]orce ahead/behind refresh' })
   local branch_group = vim.api.nvim_create_augroup('GitBranchWinbar', { clear = true })
   vim.api.nvim_create_autocmd('User', {
     group = branch_group,
@@ -707,7 +718,8 @@ do
         local root = (vim.b[buf].gitsigns_status_dict or {}).root
         if root and not seen[root] then
           seen[root] = true
-          refresh_branch_counts(buf, true)
+          -- Windows process launches can be slow; only manual refresh bypasses its cache.
+          refresh_branch_counts(buf, not is_windows)
         end
       end
     end,

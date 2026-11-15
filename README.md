@@ -178,6 +178,7 @@ Use **Space h h** from a repository directory to open the Git status and diff pa
 | Shortcut | Action |
 | --- | --- |
 | **Space h h** | Open the repository's changed-file list and inline diff panel. |
+| **Space h f** | Force-refresh this repository's ahead/behind commit counts (no fetch). |
 | **Space h d** | Compare unstaged changes side by side with the index. |
 | **Space h D** | Compare all uncommitted changes in this file with `HEAD` (staged and unstaged). |
 | **Space t i** | Toggle a full-file inline view against `HEAD` (staged and unstaged), with removed lines above their replacements. |
@@ -198,7 +199,7 @@ To edit at the line you are reviewing, put the cursor on that line in the workin
 
 The top bar shows the relative file path and unsaved (`[+]`) or read-only (`[RO]`) flags. Paths are not abbreviated by segment; paths wider than the pane are truncated to fit. The focused pane's path and bottom Git information follow the mode color: blue for Normal, green for Insert, purple for Visual, red for Replace, yellow for Command, and cyan for other modes. Backgrounds remain transparent and inactive panes stay muted. Error/warning counts keep their diagnostic colors.
 
-The bottom statusline shows the Git branch once Gitsigns detects it, plus commit counts relative to its configured upstream: ` 2   1` means two commits ahead and one behind. Zero counts are shown; counts are omitted if Git cannot compare with an upstream (for example, a new branch without tracking configured). Checks run asynchronously and are cached per repository for five seconds. They refresh on Git updates, entering a file, or an idle cursor, and are forced when returning focus or leaving a terminal. Counts use local tracking refs; run `git fetch` to learn about newer remote commits. The bar does not fetch automatically.
+The bottom statusline shows the Git branch once Gitsigns detects it, plus commit counts relative to its configured upstream: ` 2   1` means two commits ahead and one behind. Zero counts are shown; counts are omitted if Git cannot compare with an upstream (for example, a new branch without tracking configured). Checks run asynchronously and are cached per repository for 30 seconds on Windows and five seconds on macOS, measured from query completion. Git updates, entering a file, or an idle cursor can refresh expired counts. Focus, terminal, and shell events also respect the cache on Windows; on macOS they force a refresh. Press **Space h f** from an open tracked file to bypass the cache and refresh immediately. Counts use local tracking refs; run `git fetch` to learn about newer remote commits. The bar does not fetch automatically.
 
 The active bottom statusline also shows the short mode (`N`, `I`, or `V`), error/warning counts (`E2 W1`), and line:column. Diagnostic counts appear in panes at least 80 columns wide. Zero diagnostic counts are hidden. Mode and position keep their mode colors, and inactive panes show muted Git information.
 
