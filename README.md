@@ -191,6 +191,8 @@ Side-by-side diffs show the base on the left and your current file on the right.
 
 Inline reviews (**Space h h**, **Space t i**, and **go**) match similar old/new lines and place each matched old line directly above its new line, with word-level highlights. Pure additions and deletions stay grouped with green/red backgrounds. Refinement uses the loaded comparison lines and is reused until the diff changes; it does not launch extra Git commands. Work is capped to keep large reviews responsive; blocks beyond the budget retain standard hunk boundaries. Gitsigns' built-in **]c** and **[c** follow these displayed pairs and sections, including staged and unstaged changes against `HEAD`, and respect counts such as **2]c** and `wrapscan`. Normal editing keeps its usual unstaged-change navigation; staging/reset actions keep their original hunks.
 
+When the Git revision uses LF and the Windows working file uses CRLF, inline review compares the visible buffer text so line-ending differences do not color the entire file. This also handles the reverse format difference. File bytes, line-ending settings, and Git's staging comparison stay unchanged.
+
 The **Space h h** review opens with two panes: the file list and an inline diff against `HEAD` showing staged and unstaged changes. Use **Ctrl+h / Ctrl+l** to move left/right, or **Ctrl+w**, then **w**, to cycle panes. For separate Neovim tabs, use **gt / gT** for next/previous. In the file list, **Enter** opens a file, **s / u** stage/unstage it, **gu** switches between inline and side-by-side layouts, **g?** shows help, and **q** closes the review. **]f / [f** move between changed files from the list or file panes.
 
 Deleted lines wrap inside the inline views (**Space h h**, **Space t i**, **go**, and **Space h i**) when `wrap` is enabled. With `linebreak` enabled, wrapping prefers spaces; a word wider than the pane still splits. Highlights are preserved, the original line number appears only on the first row, and resizing reflows the preview. This custom adapter in `init.lua` works with Neovim 0.12 and the pinned Gitsigns version; it does not alter the file or the plugin checkout. Use `:setlocal nowrap` to restore horizontal scrolling.
@@ -202,21 +204,24 @@ To edit at the line you are reviewing, put the cursor on that line in the workin
 On the affected machine, open **Space h h**, select the affected file with **Enter**, and move the cursor into its code pane. Run this read-only command in Neovim:
 
 ```vim
-:lua local v=require('gitsigns.unified').get_view(); local t={}; for i,h in ipairs(v and v.hunks or {}) do if i<=12 then t[#t+1]=h.type..':'..h.removed.count..'/'..h.added.count end end; local f=debug.getinfo(require('gitsigns.hunk_preview').capture_removed_hunks_from_source,'S'); print('renderer='..f.short_src..':'..f.linedefined); print('unified='..tostring(v~=nil)..' blocks='..table.concat(t,', '))
+:lua local v=require('gitsigns.unified').get_view(); local t={}; for i,h in ipairs(v and v.hunks or {}) do if i<=12 then t[#t+1]=h.type..':'..h.removed.count..'/'..h.added.count end end; local f=debug.getinfo(require('gitsigns.hunk_preview').capture_removed_hunks_from_source,'S'); print('renderer='..f.short_src..':'..f.linedefined); print('unified='..tostring(v~=nil)..' formats='..(v and (vim.bo[v.base].fileformat..'/'..vim.bo[v.buf].fileformat) or 'n/a')..' blocks='..table.concat(t,', '))
 ```
 
-Use **`:messages`** to read or copy the output if it is cut off. It contains the renderer's source location and the first 12 change blocks' types and line counts, without file contents.
+Use **`:messages`** to read or copy the output if it is cut off. It contains the renderer's source location, base/working-file line-ending formats, and the first 12 change blocks' types and line counts, without file contents.
 
 | Output | Meaning |
 | --- | --- |
 | `renderer=...init.lua:...` | The custom inline display adapter is loaded. |
 | `renderer=...gitsigns/hunk_preview.lua:...` | Gitsigns' original renderer is active. Check which config this Neovim instance loads with `:echo $MYVIMRC`. On Windows, copy the latest repo `nvim/init.lua` to `%LOCALAPPDATA%\nvim\init.lua`, then completely restart Neovim. |
 | `unified=false` | The current pane is not a Gitsigns inline code view. Move out of the file list or switch back from side-by-side view with **gu** in the file list, then rerun the command. |
+| `formats=unix/dos` | The Git revision uses LF and the working file uses CRLF. The adapter compares visible text to prevent a false whole-file replacement. `dos/unix` is handled the same way. |
 | `change:1/1` | One old/new line pair. Several such entries should appear for a paired replacement. |
 | `change:80/80` | A grouped replacement of 80 old and 80 new lines. This can be the performance fallback described below. |
 | `add:0/10` or `delete:10/0` | Ten added or deleted lines with no matched opposite side; these stay grouped. |
 
 Extra line matching has a shared budget of **500,000 estimated work units per displayed diff**. A block's estimate is `removed × added × min(removed, added)`. For example, an 80-old/80-new replacement costs `512,000`, exceeds the budget, and currently stays grouped. This fallback can explain why side-by-side looks correct while inline still shows a red block followed by a green block; it does not prove that this is the cause on another machine. The output above helps distinguish the fallback from a config that has not loaded the adapter.
+
+Earlier versions of the adapter could show a whole-file replacement such as `change:923/1012` when the Git revision and working file had different LF/CRLF formats. Update the copied config and restart Neovim before interpreting a block of that size as a genuine large replacement.
 
 ### Read the statusline
 

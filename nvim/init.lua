@@ -589,7 +589,7 @@ do
     local preview = require 'gitsigns.hunk_preview'
     local capture = preview.capture_removed_hunks_from_source
 
-    local function inline_sections(display_hunks)
+    local function inline_sections(display_hunks, buf, base)
       local result = {}
       local function append(section, aligned)
         local removed, added = section.removed, section.added
@@ -615,6 +615,30 @@ do
       local opts = { result_type = 'indices', linematch = true }
       for _, key in ipairs({ 'algorithm', 'indent_heuristic', 'ignore_whitespace', 'ignore_whitespace_change', 'ignore_whitespace_change_at_eol', 'ignore_blank_lines', 'ignore_cr_at_eol' }) do
         opts[key] = config[key]
+      end
+      if vim.bo[buf].fileformat ~= vim.bo[base].fileformat
+        and (vim.bo[buf].fileformat == 'dos' or vim.bo[base].fileformat == 'dos') then
+        -- Gitsigns' raw comparison restores CRs for DOS buffers. Match the
+        -- visible text, as native vimdiff does, when Git's LF base differs.
+        local old_lines = vim.api.nvim_buf_get_lines(base, 0, -1, false)
+        local new_lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
+        if vim.bo[base].endofline then old_lines[#old_lines + 1] = '' end
+        if vim.bo[buf].endofline then new_lines[#new_lines + 1] = '' end
+        local display_opts = vim.tbl_extend('force', opts, { linematch = display_limit > 0 and display_limit or false })
+        local raw = vim.text.diff(table.concat(old_lines, '\n'), table.concat(new_lines, '\n'), display_opts)
+        display_hunks = {}
+        for _, part in ipairs(raw) do
+          local section = hunks.create_hunk(part[1], part[2], part[3], part[4])
+          for _, side in ipairs({ 'removed', 'added' }) do
+            local node = section[side]
+            local lines = side == 'removed' and old_lines or new_lines
+            if node.count > 0 then
+              node.lines = vim.list_slice(lines, node.start, node.start + node.count - 1)
+              node.no_nl_at_eof = node.start + node.count > #lines and lines[#lines] ~= '' or nil
+            end
+          end
+          display_hunks[#display_hunks + 1] = section
+        end
       end
       for _, hunk in ipairs(display_hunks) do
         local removed, added = hunk.removed.count, hunk.added.count
@@ -643,7 +667,7 @@ do
 
     preview.capture_removed_hunks_from_source = function(buf, base, display_hunks, opts)
       if unified.is_active(buf, base) and opts.line_hl == 'GitSignsDeleteVirtLn' then
-        local refined = inline_sections(display_hunks)
+        local refined = inline_sections(display_hunks, buf, base)
         -- This array belongs to the unified view. The ordinary buffer's
         -- staging/reset hunks are kept separately in Gitsigns' cache.
         for i = #display_hunks, 1, -1 do display_hunks[i] = nil end
