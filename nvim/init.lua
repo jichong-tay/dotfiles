@@ -712,7 +712,11 @@ do
     schedule()
   end
 
-  -- Follow normal diff matching; pair short replacements, group longer runs.
+  -- Show each change block as all removed lines, then all added lines, like
+  -- VS Code. Linematch splits a block into adjacent line-pair hunks; rejoin
+  -- them, and join across gaps of only a few unchanged characters (a blank
+  -- line or a lone brace). Real context stays unchanged and separate, so ]c/[c,
+  -- which read this list in the unified view, still stop at every change.
   -- Normalize LF/CRLF display comparisons without changing files or staging.
   do
     local unified = require 'gitsigns.unified'
@@ -720,21 +724,22 @@ do
     local preview = require 'gitsigns.hunk_preview'
     local capture = preview.capture_removed_hunks_from_source
     local highlight_added = preview.highlight_added_hunk
-    local inline_block_threshold = 3
-    local inline_chain_gap = 3
-    local chains = setmetatable({}, { __mode = 'k' })
+    local trivial_gap_chars = 4 -- VS Code's removeVeryShortMatchingLinesBetweenDiffs limits
+    local trivial_gap_min_block = 5
+    local blocks = setmetatable({}, { __mode = 'k' })
 
     -- Empty diff nodes point after the previous line; nonempty nodes start on
-    -- a one-based line. Compare both as zero-based boundaries when chaining.
+    -- a one-based line. Compare both as zero-based boundaries.
     local function start_row(node) return node.start - (node.count > 0 and 1 or 0) end
 
-    -- A display chain includes context, but only its original edits get colors.
+    -- Members keep their own word diffs; joined gap lines get the line color.
     preview.highlight_added_hunk = function(buf, ns, hunk)
-      if chains[hunk] then
-        for _, member in ipairs(chains[hunk]) do highlight_added(buf, ns, member) end
-      else
-        highlight_added(buf, ns, hunk)
+      local members = blocks[hunk]
+      if not members then return highlight_added(buf, ns, hunk) end
+      for row = hunk.added.start - 1, hunk.added.start + hunk.added.count - 2 do
+        vim.api.nvim_buf_set_extmark(buf, ns, row, 0, { end_row = row + 1, hl_group = 'GitSignsAddPreview', hl_eol = true, priority = 1000 })
       end
+      for _, member in ipairs(members) do highlight_added(buf, ns, member) end
     end
 
     preview.capture_removed_hunks_from_source = function(buf, base, display_hunks, opts)
@@ -771,36 +776,28 @@ do
       end
       if inline then
         local sections = {}
-        local function append(hunk)
-          local count = hunk.added.count
-          if hunk.type == 'change' and count == hunk.removed.count and count > 1 and count < inline_block_threshold then
-            for offset = 0, count - 1 do
-              local pair = hunks.create_hunk(hunk.removed.start + offset, 1, hunk.added.start + offset, 1)
-              for _, side in ipairs({ 'removed', 'added' }) do
-                pair[side].lines = { hunk[side].lines[offset + 1] }
-                pair[side].no_nl_at_eof = offset == count - 1 and hunk[side].no_nl_at_eof or nil
-              end
-              sections[#sections + 1] = pair
-            end
-          else
-            sections[#sections + 1] = hunk
-          end
+        local function joinable(last, next_hunk, size)
+          local gap = start_row(next_hunk.removed) - start_row(last.removed) - last.removed.count
+          if gap < 0 then return false end
+          if gap == 0 then return true end
+          local next_size = next_hunk.removed.count + next_hunk.added.count
+          if size <= trivial_gap_min_block and next_size <= trivial_gap_min_block then return false end
+          local first = start_row(last.removed) + last.removed.count
+          local text = table.concat(vim.api.nvim_buf_get_lines(base, first, first + gap, false)):gsub('%s', '')
+          return #text <= trivial_gap_chars
         end
         local i = 1
         while i <= #display_hunks do
           local first, last, stop = display_hunks[i], display_hunks[i], i
-          local changed = math.max(first.removed.count, first.added.count)
+          local size = first.removed.count + first.added.count
           local removed, added = first.removed.count, first.added.count
-          while stop < #display_hunks do
-            local next_hunk = display_hunks[stop + 1]
-            local old_gap = start_row(next_hunk.removed) - start_row(last.removed) - last.removed.count
-            local new_gap = start_row(next_hunk.added) - start_row(last.added) - last.added.count
-            if old_gap < 0 or old_gap ~= new_gap or old_gap > inline_chain_gap then break end
-            stop, last = stop + 1, next_hunk
-            changed = changed + math.max(last.removed.count, last.added.count)
+          while stop < #display_hunks and joinable(last, display_hunks[stop + 1], size) do
+            stop, last = stop + 1, display_hunks[stop + 1]
+            size = size + last.removed.count + last.added.count
             removed, added = removed + last.removed.count, added + last.added.count
           end
-          if stop > i and changed >= inline_block_threshold and removed > 0 and added > 0 then
+          -- Joining pure additions would only paint unchanged gap lines red.
+          if stop > i and removed > 0 and added > 0 then
             local old_start, new_start = start_row(first.removed), start_row(first.added)
             local merged = hunks.create_hunk(old_start + 1, start_row(last.removed) + last.removed.count - old_start,
               new_start + 1, start_row(last.added) + last.added.count - new_start)
@@ -811,21 +808,21 @@ do
               node.lines = vim.api.nvim_buf_get_lines(source, node.start - 1, last_line, false)
               node.no_nl_at_eof = last_line == vim.api.nvim_buf_line_count(source) and not vim.bo[source].endofline or nil
             end
-            chains[merged] = vim.list_slice(display_hunks, i, stop)
+            blocks[merged] = vim.list_slice(display_hunks, i, stop)
             sections[#sections + 1] = merged
           else
-            for index = i, stop do append(display_hunks[index]) end
+            vim.list_extend(sections, display_hunks, i, stop)
           end
           i = stop + 1
         end
-        for i = #display_hunks, 1, -1 do display_hunks[i] = nil end
+        for index = #display_hunks, 1, -1 do display_hunks[index] = nil end
         vim.list_extend(display_hunks, sections)
         local captured = {}
         for index, hunk in ipairs(display_hunks) do
-          local members = chains[hunk]
+          local members = blocks[hunk]
           if members then
-            -- Capture neutral old context, then insert the original colored edits.
-            local rows = capture(buf, base, { hunk }, { word_diff = false })[1]
+            -- Color the whole block, then restore each member's word diff.
+            local rows = capture(buf, base, { hunk }, { line_hl = opts.line_hl, word_diff = false })[1]
             local edits = capture(buf, base, members, opts)
             for member_index, member in ipairs(members) do
               for offset, line in ipairs(edits[member_index]) do rows[member.removed.start - hunk.removed.start + offset] = line end
