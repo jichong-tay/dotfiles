@@ -616,6 +616,146 @@ do
   vim.cmd 'set diffopt+=algorithm:histogram'
   vim.cmd 'set diffopt+=linematch:60'
   vim.cmd 'set diffopt+=inline:word'
+
+  -- Gitsigns derives staged hunks from HEAD vs the buffer, then drops unstaged
+  -- hunks only when both start on the same line (see the TODO in
+  -- gitsigns/hunks.lua filter_common). When a staged change touches an
+  -- unstaged one, the staged sign lands on the wrong line, and unstaging applies
+  -- a zero-context patch built from buffer lines to the index, which can
+  -- duplicate or drop nearby lines there. Compute staged hunks from HEAD vs the
+  -- index, place them on buffer lines through the unstaged hunks, and unstage by
+  -- applying each one's exact inverse to the index.
+  local stage_or_unstage
+  do
+    local Hunks = require 'gitsigns.hunks'
+    local cache = require('gitsigns.cache').cache
+    local filter_common = Hunks.filter_common
+    local index_hunks = setmetatable({}, { __mode = 'k' }) -- shown staged hunk -> HEAD-to-index hunk
+
+    -- Diff like Gitsigns' internal diff; `linematch` false matches its greedy hunks.
+    local function diff_hunks(old, new, linematch)
+      local config = require('gitsigns.config').config.diff_opts
+      local opts = { result_type = 'indices', linematch = linematch and type(config.linematch) == 'number' and config.linematch or nil }
+      for _, key in ipairs { 'algorithm', 'indent_heuristic', 'ignore_whitespace', 'ignore_whitespace_change', 'ignore_whitespace_change_at_eol', 'ignore_blank_lines' } do
+        opts[key] = config[key]
+      end
+      local result = {}
+      for _, part in ipairs(vim.text.diff(table.concat(old, '\n'), table.concat(new, '\n'), opts)) do
+        local hunk = Hunks.create_hunk(part[1], part[2], part[3], part[4])
+        for side, lines in pairs { removed = old, added = new } do
+          local node = hunk[side]
+          if node.count > 0 then
+            node.lines = vim.list_slice(lines, node.start, node.start + node.count - 1)
+            node.no_nl_at_eof = node.start + node.count > #lines and lines[#lines] ~= '' or nil
+          end
+        end
+        result[#result + 1] = hunk
+      end
+      return result
+    end
+
+    -- A node covers rows [first, first + count); an empty node sits at row `start`.
+    local function first_row(node) return node.start - (node.count > 0 and 1 or 0) end
+
+    -- Move HEAD-to-index hunks onto buffer lines using the index-to-buffer hunks.
+    local function place(staged, unstaged)
+      local shown = {}
+      for _, hunk in ipairs(staged) do
+        local row, shift, mapped = first_row(hunk.added), 0, nil
+        for _, u in ipairs(unstaged) do
+          local from = first_row(u.removed)
+          local to = from + u.removed.count
+          if to <= row then
+            shift = shift + u.added.count - u.removed.count
+          elseif from <= row then
+            mapped = first_row(u.added) + math.min(row - from, u.added.count)
+            break
+          else
+            break
+          end
+        end
+        row = mapped or row + shift
+        local placed = Hunks.create_hunk(hunk.removed.start, hunk.removed.count, hunk.added.count > 0 and row + 1 or row, hunk.added.count)
+        placed.removed.lines, placed.added.lines = hunk.removed.lines, hunk.added.lines
+        placed.removed.no_nl_at_eof, placed.added.no_nl_at_eof = hunk.removed.no_nl_at_eof, hunk.added.no_nl_at_eof
+        index_hunks[placed] = hunk
+        shown[#shown + 1] = placed
+      end
+      return shown
+    end
+
+    -- Only the sign update passes the buffer's own unstaged hunks; Gitsigns'
+    -- staged preview and navigation keep their original behavior.
+    Hunks.filter_common = function(a, b)
+      if b then
+        for _, bcache in pairs(cache) do
+          if bcache.hunks == b and bcache.compare_text_head and bcache.compare_text then
+            return place(diff_hunks(bcache.compare_text_head, bcache.compare_text, true), b)
+          end
+        end
+      end
+      return filter_common(a, b)
+    end
+
+    local function pick(hunks, top, bot, line_count)
+      local found = {}
+      for _, hunk in ipairs(hunks) do
+        local first = math.max(hunk.added.start, 1)
+        if top == bot and Hunks.find_hunk(top, { hunk }, line_count) or top ~= bot and first <= bot and math.max(hunk.vend, first) >= top then
+          found[#found + 1] = hunk
+        end
+      end
+      return found
+    end
+
+    -- Stage with Gitsigns when an unstaged change is selected; otherwise unstage
+    -- the selected staged hunks. Ranges unstage whole hunks they touch.
+    stage_or_unstage = function(range)
+      local bufnr = vim.api.nvim_get_current_buf()
+      local bcache = cache[bufnr]
+      if not (bcache and bcache.compare_text and bcache.hunks_staged) then return gitsigns.stage_hunk(range) end
+      local line_count = vim.api.nvim_buf_line_count(bufnr)
+      local top = range and math.min(range[1], range[2]) or vim.fn.line '.'
+      local bot = range and math.max(range[1], range[2]) or top
+      local buffer_text = require('gitsigns.util').buf_lines(bufnr)
+      if #pick(diff_hunks(bcache.compare_text, buffer_text, false), top, bot, line_count) > 0 then return gitsigns.stage_hunk(range) end
+      -- Signs use linematch hunks, which can start on another line than the
+      -- greedy hunk Gitsigns stages; stage the hunk whose sign is selected.
+      if #pick(bcache.hunks or {}, top, bot, line_count) > 0 then return gitsigns.stage_hunk(range, { greedy = false }) end
+
+      local inverse = {}
+      for _, shown in ipairs(pick(bcache.hunks_staged, top, bot, line_count)) do
+        local hunk = index_hunks[shown]
+        if hunk then
+          local back = Hunks.create_hunk(hunk.added.start, hunk.added.count, hunk.removed.start, hunk.removed.count)
+          back.removed.lines, back.added.lines = hunk.added.lines, hunk.removed.lines
+          back.removed.no_nl_at_eof, back.added.no_nl_at_eof = hunk.added.no_nl_at_eof, hunk.removed.no_nl_at_eof
+          inverse[#inverse + 1] = back
+        end
+      end
+      if #inverse == 0 then
+        vim.api.nvim_echo({ { 'No hunk to stage', 'WarningMsg' } }, false, {})
+        return
+      end
+      table.sort(inverse, function(x, y) return x.removed.start < y.removed.start end)
+
+      require('gitsigns.async').run(function()
+        local err
+        bcache.git_obj:lock(function()
+          err = bcache.git_obj:stage_hunks(inverse)
+          if not err and bcache.compare_text then
+            for i = #inverse, 1, -1 do bcache.compare_text = Hunks.apply_to_text(bcache.compare_text, inverse[i]) end
+          end
+        end)
+        if err then require('gitsigns.message').error(err) end
+        bcache:invalidate()
+        require('gitsigns.manager').update(bufnr)
+        if not bcache:schedule() then return end
+        if vim.wo.diff or require('gitsigns.unified').is_active(bufnr) then require('gitsigns.actions.diffthis').update(bufnr) end
+      end):raise_on_error()
+    end
+  end
+
   gitsigns.setup {
     -- Coalesce rapid edits on slower Windows machines; keep Git watchers active
     -- so external staging and branch changes still update the comparison base.
@@ -647,10 +787,10 @@ do
       end, { desc = 'Jump to previous git [c]hange', buf = bufnr })
 
       -- Visual mode actions
-      vim.keymap.set('v', '<leader>hs', function() gitsigns.stage_hunk { vim.fn.line '.', vim.fn.line 'v' } end, { desc = 'git [s]tage hunk', buf = bufnr })
+      vim.keymap.set('v', '<leader>hs', function() stage_or_unstage { vim.fn.line '.', vim.fn.line 'v' } end, { desc = 'git [s]tage hunk', buf = bufnr })
       vim.keymap.set('v', '<leader>hr', function() gitsigns.reset_hunk { vim.fn.line '.', vim.fn.line 'v' } end, { desc = 'git [r]eset hunk', buf = bufnr })
       -- Normal mode actions
-      vim.keymap.set('n', '<leader>hs', gitsigns.stage_hunk, { desc = 'git [s]tage hunk', buf = bufnr })
+      vim.keymap.set('n', '<leader>hs', function() stage_or_unstage() end, { desc = 'git [s]tage hunk', buf = bufnr })
       vim.keymap.set('n', '<leader>hr', gitsigns.reset_hunk, { desc = 'git [r]eset hunk', buf = bufnr })
       vim.keymap.set('n', '<leader>hS', gitsigns.stage_buffer, { desc = 'git [S]tage buffer', buf = bufnr })
       vim.keymap.set('n', '<leader>hR', gitsigns.reset_buffer, { desc = 'git [R]eset buffer', buf = bufnr })

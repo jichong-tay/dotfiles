@@ -265,9 +265,13 @@ Earlier versions of the adapter could show a whole-file replacement such as `cha
 
 #### Troubleshoot staging that leaves extra changes
 
-Seen on Windows: in a normal file view (no inline diff), pressing **Space h s** on a `_` deletion sign stages the deletion, but a sign then also appears on the line above. lazygit then lists the change twice, and re-staging the file in lazygit clears it. Git's index no longer matches what was staged. Gitsigns stages with `git apply --cached --unidiff-zero`, a patch with no context lines, so the patch can land in the wrong place if Gitsigns' view of the file or index is off. That could come from line endings, letter case in the path, or a missed index refresh. This could not be reproduced on macOS.
+The symptom: you stage a change with **Space h s**, then edit next to it. A staged sign shows up on the wrong line, and pressing **Space h s** there to unstage leaves Git's staged copy with lines duplicated or dropped. lazygit then shows the same lines as both staged and unstaged, and re-staging the file in lazygit clears it. This happens on any OS; it was first noticed on Windows.
 
-Collect the following **before** fixing it in lazygit, while the extra sign is still visible.
+The cause is in Gitsigns. It finds staged hunks by comparing HEAD with the **buffer**, then subtracts unstaged hunks only when both start on the same line (see the `TODO` in `filter_common` in `gitsigns/hunks.lua`). When a staged change touches an unstaged one, the whole HEAD-to-buffer hunk counts as staged. Unstaging then applies a patch with no context lines, built from buffer lines, to the index, so Git can match a similar nearby line such as another `import`.
+
+`init.lua` works around this. Staged signs come from comparing HEAD with the **index**, placed on buffer lines through the unstaged hunks. **Space h s** stages an unstaged change under the cursor as usual. With a staged change under the cursor, it unstages it by applying that hunk's exact inverse to the index. In Visual mode, it unstages every staged hunk the selection touches. Pressing it on any visible unstaged sign stages that change, even where the sign and Gitsigns' larger staging hunk start on different lines. Staged-hunk previews and staged-change navigation still use Gitsigns' original calculation.
+
+If a mismatch still appears, collect the following **before** fixing it in lazygit, while the extra sign is still visible.
 
 1. With the cursor in the affected file, run this read-only command in Neovim. It prints the path Gitsigns uses, its line-ending detection, and the hunk positions, without file contents. Use **`:messages`** to copy the output.
 
