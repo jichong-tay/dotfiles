@@ -192,7 +192,7 @@ Side-by-side diffs show the base on the left and your current file on the right.
 
 Changed lines use muted red for the old version and muted green for the new version, with darker red/green backgrounds over the changed words. Syntax colors remain and words are not made bold. In native side-by-side comparisons (**Space h d**, **Space h D**, **Space t d**, and **gu**), both shades stay red in the old pane and green in the current pane, including when the word-diff overlay is enabled. Temporary pane colors are removed when the comparison closes. This changes styling only; line matching and navigation stay the same.
 
-Inline reviews (**Space h h**, **Space t i**, and **go**) use the same muted red/green line backgrounds and darker changed-word backgrounds, and place each matched old line directly above its new line. Pure additions and deletions stay grouped. Refinement uses the loaded comparison lines and is reused until the diff changes; it does not launch extra Git commands. Work is capped to keep large reviews responsive; blocks beyond the budget retain standard hunk boundaries. Gitsigns' built-in **]c** and **[c** follow these displayed pairs and sections, including staged and unstaged changes against `HEAD`, and respect counts such as **2]c** and `wrapscan`. Normal editing keeps its usual unstaged-change navigation; staging/reset actions keep their original hunks.
+Inline reviews (**Space h h**, **Space t i**, and **go**) use the configured diff matching, as side-by-side comparisons do. Isolated one- and two-line matched replacements appear as individual red old/new green pairs. Nearby replacements separated by **up to three unchanged lines** form a chain; when the chain contains **three or more changed lines**, its old content appears together above its new content. Unchanged context is included in both versions with neutral text backgrounds; only actual edits receive red/green backgrounds and darker word highlights. Longer consecutive replacements and pure additions/deletions also stay grouped. Gitsigns' built-in **]c** and **[c** follow these displayed pairs, blocks, or chains, including staged and unstaged changes against `HEAD`, and respect counts such as **2]c** and `wrapscan`. Normal editing keeps its usual unstaged-change navigation; staging/reset actions keep their original individual hunks, so staging inside a chain does not automatically stage the other edits. This display rule adds no Git commands or extra line-matching passes.
 
 When the Git revision uses LF and the Windows working file uses CRLF, inline review compares the visible buffer text so line-ending differences do not color the entire file. This also handles the reverse format difference. File bytes, line-ending settings, and Git's staging comparison stay unchanged.
 
@@ -239,7 +239,7 @@ The config sets `algorithm`, `linematch`, and `inline` individually so Neovim 0.
 
 When reporting a problem from another machine, include the highlight diagnostic and `diffopt` output, whether disabling the word overlay removed the mixed colors, and whether the temporary matching limit or algorithm improved the alignment. For alignment, identify which old function is directly opposite the new function, both line numbers, and which old definition should match instead. A deleted function paired with a different surviving function is an alignment problem; changing highlight colors does not correct that pairing. No source code is required for these initial checks.
 
-#### Troubleshoot grouped red/green blocks in the inline view
+#### Troubleshoot unexpected whole-file changes in the inline view
 
 On the affected machine, open **Space h h**, select the affected file with **Enter**, and move the cursor into its code pane. Run this read-only command in Neovim:
 
@@ -255,11 +255,11 @@ Use **`:messages`** to read or copy the output if it is cut off. It contains the
 | `renderer=...gitsigns/hunk_preview.lua:...` | Gitsigns' original renderer is active. Check which config this Neovim instance loads with `:echo $MYVIMRC`. On Windows, copy the latest repo `nvim/init.lua` to `%LOCALAPPDATA%\nvim\init.lua`, then completely restart Neovim. |
 | `unified=false` | The current pane is not a Gitsigns inline code view. Move out of the file list or switch back from side-by-side view with **gu** in the file list, then rerun the command. |
 | `formats=unix/dos` | The Git revision uses LF and the working file uses CRLF. The adapter compares visible text to prevent a false whole-file replacement. `dos/unix` is handled the same way. |
-| `change:1/1` | One old/new line pair. Several such entries should appear for a paired replacement. |
-| `change:80/80` | A grouped replacement of 80 old and 80 new lines. This can be the performance fallback described below. |
+| `change:1/1` | A single-line replacement, or one pair from a two-line matched replacement. |
+| `change:80/80` | A grouped replacement or nearby-edit chain spanning 80 old and 80 new lines. Chain counts include neutral context. |
 | `add:0/10` or `delete:10/0` | Ten added or deleted lines with no matched opposite side; these stay grouped. |
 
-Extra line matching has a shared budget of **500,000 estimated work units per displayed diff**. A block's estimate is `removed × added × min(removed, added)`. For example, an 80-old/80-new replacement costs `512,000`, exceeds the budget, and currently stays grouped. This fallback can explain why side-by-side looks correct while inline still shows a red block followed by a green block; it does not prove that this is the cause on another machine. The output above helps distinguish the fallback from a config that has not loaded the adapter.
+Inline reviews retain normal diff matching, with individual pairs for short isolated replacements and grouping for runs or chains containing three or more changed lines. Chain gaps may contain up to three unchanged lines, shown as neutral context. The earlier extra matching pass and its work budget have been removed. Larger displayed block counts can include chain context; investigate if unchanged text itself receives added/deleted backgrounds across an unexpectedly large part of the file.
 
 Earlier versions of the adapter could show a whole-file replacement such as `change:923/1012` when the Git revision and working file had different LF/CRLF formats. Update the copied config and restart Neovim before interpreting a block of that size as a genuine large replacement.
 

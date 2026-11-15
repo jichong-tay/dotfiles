@@ -443,7 +443,9 @@ do
           virt.add_chunk(row, tokens[i][1], tokens[i][2])
           cells = cells + tokens[i][3]
         end
-        local eol_hl = row[#row] and row[#row][2] or 'GitSignsDeleteVirtLn'
+        -- Empty context lines inherit their original padding, not the red gutter.
+        local tail = #tokens == 0 and chunks[#chunks] or row[#row]
+        local eol_hl = tail and tail[2] or 'Normal'
         virt.add_chunk(row, string.rep(' ', math.max(available - cells, 0)), eol_hl)
         rows[#rows + 1], first = row, last + 1
       until first > #tokens
@@ -710,52 +712,46 @@ do
     schedule()
   end
 
-  -- Refine the inline display using its in-memory comparison lines. Gitsigns'
-  -- built-in navigation then follows the same blocks that are being rendered.
+  -- Follow normal diff matching; pair short replacements, group longer runs.
+  -- Normalize LF/CRLF display comparisons without changing files or staging.
   do
     local unified = require 'gitsigns.unified'
     local hunks = require 'gitsigns.hunks'
     local preview = require 'gitsigns.hunk_preview'
     local capture = preview.capture_removed_hunks_from_source
+    local highlight_added = preview.highlight_added_hunk
+    local inline_block_threshold = 3
+    local inline_chain_gap = 3
+    local chains = setmetatable({}, { __mode = 'k' })
 
-    local function inline_sections(display_hunks, buf, base)
-      local result = {}
-      local function append(section, aligned)
-        local removed, added = section.removed, section.added
-        if aligned and section.type == 'change' and removed.count == added.count and added.count > 1 then
-          -- Place each old line directly above its corresponding new line.
-          for offset = 0, added.count - 1 do
-            local pair = hunks.create_hunk(removed.start + offset, 1, added.start + offset, 1)
-            for _, side in ipairs({ 'removed', 'added' }) do
-              pair[side].lines = { section[side].lines[offset + 1] }
-              pair[side].no_nl_at_eof = offset == added.count - 1 and section[side].no_nl_at_eof or nil
-            end
-            result[#result + 1] = pair
-          end
-        else
-          result[#result + 1] = section
-        end
+    -- A display chain includes context, but only its original edits get colors.
+    preview.highlight_added_hunk = function(buf, ns, hunk)
+      if chains[hunk] then
+        for _, member in ipairs(chains[hunk]) do highlight_added(buf, ns, member) end
+      else
+        highlight_added(buf, ns, hunk)
       end
-      local config = require('gitsigns.config').config.diff_opts
-      local display_limit = type(config.linematch) == 'number' and config.linematch or 0
-      -- Line matching grows rapidly with both sides of a replacement. Bound
-      -- the estimated work per diff so large reviews retain responsive jumps.
-      local matching_budget = 500000
-      local opts = { result_type = 'indices', linematch = true }
-      for _, key in ipairs({ 'algorithm', 'indent_heuristic', 'ignore_whitespace', 'ignore_whitespace_change', 'ignore_whitespace_change_at_eol', 'ignore_blank_lines', 'ignore_cr_at_eol' }) do
-        opts[key] = config[key]
-      end
-      if vim.bo[buf].fileformat ~= vim.bo[base].fileformat
+    end
+
+    preview.capture_removed_hunks_from_source = function(buf, base, display_hunks, opts)
+      local inline = unified.is_active(buf, base) and opts.line_hl == 'GitSignsDeleteVirtLn'
+      if inline
+        and vim.bo[buf].fileformat ~= vim.bo[base].fileformat
         and (vim.bo[buf].fileformat == 'dos' or vim.bo[base].fileformat == 'dos') then
+        local config = require('gitsigns.config').config.diff_opts
+        local display_opts = { result_type = 'indices', linematch = type(config.linematch) == 'number' and config.linematch or false }
+        for _, key in ipairs({ 'algorithm', 'indent_heuristic', 'ignore_whitespace', 'ignore_whitespace_change', 'ignore_whitespace_change_at_eol', 'ignore_blank_lines', 'ignore_cr_at_eol' }) do
+          display_opts[key] = config[key]
+        end
         -- Gitsigns' raw comparison restores CRs for DOS buffers. Match the
         -- visible text, as native vimdiff does, when Git's LF base differs.
         local old_lines = vim.api.nvim_buf_get_lines(base, 0, -1, false)
         local new_lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
         if vim.bo[base].endofline then old_lines[#old_lines + 1] = '' end
         if vim.bo[buf].endofline then new_lines[#new_lines + 1] = '' end
-        local display_opts = vim.tbl_extend('force', opts, { linematch = display_limit > 0 and display_limit or false })
         local raw = vim.text.diff(table.concat(old_lines, '\n'), table.concat(new_lines, '\n'), display_opts)
-        display_hunks = {}
+        -- Only replace the view's hunks; stage/reset keeps the original cache.
+        for i = #display_hunks, 1, -1 do display_hunks[i] = nil end
         for _, part in ipairs(raw) do
           local section = hunks.create_hunk(part[1], part[2], part[3], part[4])
           for _, side in ipairs({ 'removed', 'added' }) do
@@ -769,38 +765,68 @@ do
           display_hunks[#display_hunks + 1] = section
         end
       end
-      for _, hunk in ipairs(display_hunks) do
-        local removed, added = hunk.removed.count, hunk.added.count
-        local work = removed * added * math.min(removed, added)
-        if hunk.type == 'change' and removed + added > display_limit and work <= matching_budget then
-          matching_budget = matching_budget - work
-          local refined = vim.text.diff(table.concat(hunk.removed.lines, '\n') .. '\n', table.concat(hunk.added.lines, '\n') .. '\n', opts)
-          for _, part in ipairs(refined) do
-            local section = hunks.create_hunk(hunk.removed.start + part[1] - 1, part[2], hunk.added.start + part[3] - 1, part[4])
-            for _, side in ipairs({ 'removed', 'added' }) do
-              local node, original = section[side], hunk[side]
-              if node.count > 0 then
-                local start = side == 'removed' and part[1] or part[3]
-                node.lines = vim.list_slice(original.lines, start, start + node.count - 1)
-                node.no_nl_at_eof = original.no_nl_at_eof and start + node.count - 1 == original.count or nil
+      if inline then
+        local sections = {}
+        local function append(hunk)
+          local count = hunk.added.count
+          if hunk.type == 'change' and count == hunk.removed.count and count > 1 and count < inline_block_threshold then
+            for offset = 0, count - 1 do
+              local pair = hunks.create_hunk(hunk.removed.start + offset, 1, hunk.added.start + offset, 1)
+              for _, side in ipairs({ 'removed', 'added' }) do
+                pair[side].lines = { hunk[side].lines[offset + 1] }
+                pair[side].no_nl_at_eof = offset == count - 1 and hunk[side].no_nl_at_eof or nil
               end
+              sections[#sections + 1] = pair
             end
-            append(section, true)
+          else
+            sections[#sections + 1] = hunk
           end
-        else
-          append(hunk, removed + added <= display_limit)
         end
-      end
-      return result
-    end
-
-    preview.capture_removed_hunks_from_source = function(buf, base, display_hunks, opts)
-      if unified.is_active(buf, base) and opts.line_hl == 'GitSignsDeleteVirtLn' then
-        local refined = inline_sections(display_hunks, buf, base)
-        -- This array belongs to the unified view. The ordinary buffer's
-        -- staging/reset hunks are kept separately in Gitsigns' cache.
+        local i = 1
+        while i <= #display_hunks do
+          local first, last, stop = display_hunks[i], display_hunks[i], i
+          local changed = math.max(first.removed.count, first.added.count)
+          while last.type == 'change' and stop < #display_hunks do
+            local next_hunk = display_hunks[stop + 1]
+            local old_gap = next_hunk.removed.start - last.removed.start - last.removed.count
+            local new_gap = next_hunk.added.start - last.added.start - last.added.count
+            if next_hunk.type ~= 'change' or old_gap < 0 or old_gap ~= new_gap or old_gap > inline_chain_gap then break end
+            stop, last = stop + 1, next_hunk
+            changed = changed + math.max(last.removed.count, last.added.count)
+          end
+          if stop > i and changed >= inline_block_threshold then
+            local merged = hunks.create_hunk(first.removed.start, last.removed.start + last.removed.count - first.removed.start,
+              first.added.start, last.added.start + last.added.count - first.added.start)
+            for _, side in ipairs({ 'removed', 'added' }) do
+              local node = merged[side]
+              node.lines = vim.api.nvim_buf_get_lines(side == 'removed' and base or buf, node.start - 1, node.start + node.count - 1, false)
+              node.no_nl_at_eof = last[side].no_nl_at_eof
+            end
+            chains[merged] = vim.list_slice(display_hunks, i, stop)
+            sections[#sections + 1] = merged
+          else
+            for index = i, stop do append(display_hunks[index]) end
+          end
+          i = stop + 1
+        end
         for i = #display_hunks, 1, -1 do display_hunks[i] = nil end
-        vim.list_extend(display_hunks, refined)
+        vim.list_extend(display_hunks, sections)
+        local captured = {}
+        for index, hunk in ipairs(display_hunks) do
+          local members = chains[hunk]
+          if members then
+            -- Capture neutral old context, then insert the original colored edits.
+            local rows = capture(buf, base, { hunk }, { word_diff = false })[1]
+            local edits = capture(buf, base, members, opts)
+            for member_index, member in ipairs(members) do
+              for offset, line in ipairs(edits[member_index]) do rows[member.removed.start - hunk.removed.start + offset] = line end
+            end
+            captured[index] = rows
+          else
+            captured[index] = capture(buf, base, { hunk }, opts)[1]
+          end
+        end
+        return captured
       end
       return capture(buf, base, display_hunks, opts)
     end
