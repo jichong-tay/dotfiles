@@ -205,7 +205,15 @@ To edit at the line you are reviewing, put the cursor on that line in the workin
 
 In an affected **Space h d** or **Space h D** code pane:
 
-1. If red and green highlights overlap within one line, try **`:Gitsigns toggle_word_diff false`**. This disables the extra Gitsigns word overlay while keeping native diff highlighting active. Check whether the mixture disappears before changing theme colors again.
+1. If red and green highlights overlap within one line, put the cursor on an affected word and run this read-only check:
+
+   ```vim
+   :lua print('native='..vim.fn.synIDattr(vim.fn.diff_hlID('.',vim.fn.col('.')),'name')..' gitsigns_word_diff='..tostring(require('gitsigns.config').config.word_diff))
+   ```
+
+   `gitsigns_word_diff=true` means the additional Gitsigns word overlay is enabled; `false` means it is disabled. `native` identifies Neovim's diff highlight at the cursor. Use **`:messages`** if the output is cut off. The check prints highlight metadata without source text.
+
+   Then try **`:Gitsigns toggle_word_diff false`**. This disables the extra Gitsigns word overlay while keeping native diff highlighting active. Check whether the mixture disappears before changing theme colors again, and keep the diagnostic output from before and after this command.
 2. Run **`:set diffopt?`** and keep the output. The default `linematch:60` only aligns similar lines within change blocks containing at most 60 old and new lines combined. Larger blocks can pair shifted function definitions poorly.
 3. Try a temporary, bounded increase:
 
@@ -228,7 +236,7 @@ In an affected **Space h d** or **Space h D** code pane:
 
 The config sets `algorithm`, `linematch`, and `inline` individually so Neovim 0.12 replaces its defaults. Older config copies may show duplicate entries such as `linematch:40,linematch:60` and `inline:char,inline:word`.
 
-When reporting a problem from another machine, include the `diffopt` output, whether disabling the word overlay removed the mixed colors, and whether the temporary matching limit or algorithm improved the alignment. No source code is required for these initial checks.
+When reporting a problem from another machine, include the highlight diagnostic and `diffopt` output, whether disabling the word overlay removed the mixed colors, and whether the temporary matching limit or algorithm improved the alignment. For alignment, identify which old function is directly opposite the new function, both line numbers, and which old definition should match instead. A deleted function paired with a different surviving function is an alignment problem; changing highlight colors does not correct that pairing. No source code is required for these initial checks.
 
 #### Troubleshoot grouped red/green blocks in the inline view
 
