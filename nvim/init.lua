@@ -1265,28 +1265,44 @@ do
       end
     end,
   })
-  local function statusline_filename()
-    local name = vim.api.nvim_buf_get_name(0)
-    local label
-    if name:match '^gitsigns%-diff://' then
-      label = 'Git changes'
-    elseif vim.bo.buftype == 'terminal' then
-      label = 'Terminal'
-    else
-      local revision, path = name:match '^gitsigns://.-//(.-):(.*)$'
-      if revision then
-        if revision == '' and path:sub(1, 2) == '0:' then revision, path = 'Index', path:sub(3) end
-        label = path .. ' [' .. revision .. ']'
-      else
-        label = vim.fn.expand '%:.'
-        if label == '' then label = '[No Name]' end
-      end
+  -- Name a buffer as a relative path plus suffix; special buffers have no path.
+  local function buffer_label(buf)
+    local name = vim.api.nvim_buf_get_name(buf)
+    if name:match '^gitsigns%-diff://' then return 'Git changes', '', false end
+    if vim.bo[buf].buftype == 'terminal' then return 'Terminal', '', false end
+    local revision, path = name:match '^gitsigns://.-//(.-):(.*)$'
+    if revision then
+      if revision == '' and path:sub(1, 2) == '0:' then revision, path = 'Index', path:sub(3) end
+      return path, ' [' .. revision .. ']', true
     end
-    return label:gsub('%%', '%%%%') .. '%m%r'
+    if name == '' then return '[No Name]', '', false end
+    return vim.fn.fnamemodify(name, ':.'), '', true
+  end
+  local function statusline_filename()
+    local path, suffix = buffer_label(0)
+    return (path .. suffix):gsub('%%', '%%%%') .. '%m%r'
   end
   -- Winbar expressions need a globally callable function; keep its code here.
   _G.DotfilesWinbar = statusline_filename
   vim.o.winbar = '%<%{%v:lua.DotfilesWinbar()%}'
+
+  -- Tabs show only each tab's current file name; the bars keep the full path.
+  _G.DotfilesTabline = function()
+    local parts, current = {}, vim.api.nvim_get_current_tabpage()
+    for index, tab in ipairs(vim.api.nvim_list_tabpages()) do
+      local buf = vim.api.nvim_win_get_buf(vim.api.nvim_tabpage_get_win(tab))
+      local label, suffix, is_path = buffer_label(buf)
+      if is_path then
+        local tail = vim.fn.fnamemodify(label, ':t')
+        if tail ~= '' then label = tail end
+      end
+      label = (label .. suffix):gsub('%%', '%%%%')
+      if vim.bo[buf].modified then label = label .. ' +' end
+      parts[#parts + 1] = ('%%#%s#%%%dT %s '):format(tab == current and 'TabLineSel' or 'TabLine', index, label)
+    end
+    return table.concat(parts) .. '%#TabLineFill#%T'
+  end
+  vim.o.tabline = '%!v:lua.DotfilesTabline()'
 
   statusline.setup {
     use_icons = vim.g.have_nerd_font,
@@ -1301,6 +1317,7 @@ do
         return statusline.combine_groups {
           { hl = mode_hl, strings = { mode } },
           '%<',
+          { hl = 'MiniStatuslineFilename', strings = { statusline_filename() } },
           { hl = 'MiniStatuslineDevinfo', strings = { (git:gsub('%%', '%%%%')) } },
           '%=',
           { hl = 'MiniStatuslineDevinfo', strings = { '%{get(b:, "git_ahead_behind", "")}' } },
@@ -1311,7 +1328,7 @@ do
       end,
       inactive = function()
         return statusline.combine_groups {
-          { hl = 'MiniStatuslineInactive', strings = { (statusline.section_git { trunc_width = 0 }:gsub('%%', '%%%%')), '%{get(b:, "git_ahead_behind", "")}' } },
+          { hl = 'MiniStatuslineInactive', strings = { statusline_filename(), (statusline.section_git { trunc_width = 0 }:gsub('%%', '%%%%')), '%{get(b:, "git_ahead_behind", "")}' } },
         }
       end,
     },
