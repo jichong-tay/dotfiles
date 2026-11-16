@@ -24,12 +24,52 @@ end
 
 configure("history.save", true)
 configure("autosuggest.enable", true)
+configure("clink.colorize_input", true)
 configure("clink.promptfilter", true)
 configure("clink.logo", "none")
+configure("cmd.get_errorlevel", true)
 
 -- Older Clink versions enable inline suggestions without this setting.
 if settings.get("autosuggest.inline") ~= nil then
     configure("autosuggest.inline", true)
+end
+
+-- Native colors only: applied at script load, with no new editing hooks.
+-- Clink 1.7+ parses RGB colors; leave older versions' colors alone.
+if settings.parsecolor then
+    local colors = {
+        ["color.input"] = "#D4D4D4",
+        ["color.arg"] = "#D4D4D4",
+        ["color.cmd"] = "#DCDCAA",
+        ["color.executable"] = "#DCDCAA",
+        ["color.argmatcher"] = "#DCDCAA",
+        ["color.doskey"] = "#4EC9B0",
+        ["color.flag"] = "#569CD6",
+        ["color.cmdredir"] = "#C586C0",
+        ["color.cmdsep"] = "#C586C0",
+        ["color.unrecognized"] = "#CE9178",
+        ["color.suggestion"] = "#808080",
+        ["color.description"] = "#808080",
+        ["color.arginfo"] = "#9CDCFE",
+        ["color.common_match_prefix"] = "#9CDCFE",
+        ["color.selected_completion"] = "#D4D4D4 on #264F78",
+        ["color.selection"] = "#D4D4D4 on #264F78",
+        ["color.comment_row"] = "#808080",
+        ["color.popup"] = "#D4D4D4 on #1E1E1E",
+        ["color.popup_border"] = "#808080 on #1E1E1E",
+        ["color.popup_desc"] = "#808080 on #1E1E1E",
+        ["color.popup_select"] = "#D4D4D4 on #264F78",
+        ["color.popup_selectdesc"] = "#9CDCFE on #264F78",
+    }
+    for name, color in pairs(colors) do
+        local current = settings.get(name)
+        -- Skip settings absent in this Clink version. Compare normalized SGR,
+        -- because settings.get returns ANSI codes rather than the RGB spelling.
+        if current ~= nil and current ~= assert(settings.parsecolor(color)) then
+            assert(settings.set(name, color), "Unable to set Clink color: " .. name)
+        end
+    end
+    configure("match.coloring_rules", "di=38;2;86;156;214:ex=38;2;220;220;170")
 end
 
 -- Apply after Readline initialization, once per script load (including reloads).
@@ -49,6 +89,7 @@ clink.onbeginedit(function()
     variable("completion-ignore-case", "on")
     variable("show-all-if-ambiguous", "on")
     variable("colored-stats", "on")
+    variable("colored-completion-prefix", "on")
     variable("mark-directories", "on")
 
     bind([["\e[A"]], "history-search-backward")
@@ -62,14 +103,26 @@ clink.onbeginedit(function()
     initialized = true
 end)
 
--- Lean layout with a blue path, subdued branch, and green input marker.
--- Tokyo Night palette; no background colors, frames, or segment separators.
-local cwd_color = "\27[38;2;122;162;247m" -- #7AA2F7
-local git_color = "\27[38;2;154;165;206m" -- #9AA5CE
-local symbol_color = "\27[38;2;158;206;106m" -- #9ECE6A
+-- VS Code Dark+ inspired palette. No background panels or frame.
+local parent_color = "\27[38;2;128;128;128m" -- #808080
+local cwd_color = "\27[1;38;2;86;156;214m" -- bold #569CD6
+local git_color = "\27[38;2;197;134;192m" -- #C586C0
+local symbol_color = "\27[38;2;181;206;168m" -- #B5CEA8
+local error_color = "\27[38;2;244;71;71m" -- #F44747
 local reset = "\27[0m"
 local symbol = use_nerd_font and "❯" or ">"
 local branch_icon = use_nerd_font and " " or "git:"
+local separator = use_nerd_font and "  ·  " or "  |  "
+
+local function format_directory()
+    local cwd = os.getcwd()
+    local parent, folder = cwd:match("^(.*[\\/])([^\\/]+)$")
+    if not parent then
+        -- Preserve drive roots and paths ending in a slash verbatim.
+        return cwd_color .. cwd .. reset
+    end
+    return parent_color .. parent .. reset .. cwd_color .. folder .. reset
+end
 
 if show_git then
     assert(git and git.getgitdir and git.getbranch,
@@ -95,7 +148,7 @@ clink.onbeginedit(function()
     elseif detached then
         branch = "@" .. branch
     end
-    git_text = "   " .. git_color .. branch_icon .. branch .. reset
+    git_text = parent_color .. separator .. reset .. git_color .. branch_icon .. branch .. reset
 end)
 
 local prompt = clink.promptfilter(30)
@@ -103,6 +156,7 @@ local prompt = clink.promptfilter(30)
 function prompt:filter()
     -- Let an explicitly selected built-in .clinkprompt take over the layout.
     if has_selected_prompt() then return end
-    return reset .. cwd_color .. os.getcwd() .. reset .. git_text
-        .. "\n" .. symbol_color .. symbol .. reset .. " ", false
+    local marker_color = os.geterrorlevel() == 0 and symbol_color or error_color
+    return reset .. format_directory() .. git_text
+        .. "\n" .. marker_color .. symbol .. reset .. " ", false
 end

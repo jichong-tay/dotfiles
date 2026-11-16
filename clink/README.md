@@ -5,20 +5,33 @@ preferences, history settings, and keyboard shortcuts. No `.inputrc`, PowerShell
 access is required. Clink still stores its own settings and history files.
 
 ```text
-C:\projects\analytics    main
+C:\projects\analytics  ·   main
 ❯ _
 ```
 
 This is a standalone adaptation of [Flex Prompt's Lean style](https://github.com/chrisant996/clink-flex-prompt#style):
-colored text with whitespace between sections. It keeps a blue directory,
-subdued blue-gray Git branch, and green input marker on two lines, using a
-Tokyo Night palette. The single-file implementation keeps the branch-only Git
-reader and needs no Flex Prompt package or configuration wizard.
+colored text on two lines, with a subtle separator between the directory and
+branch. Colors are inspired by [VS Code Dark+](https://github.com/microsoft/vscode/blob/main/extensions/theme-defaults/themes/dark_plus.json):
+gray parent folders, a bold blue current folder, a purple Git branch, and a
+pale green input marker that turns red after a failed command. The single-file
+implementation keeps the branch-only Git reader and needs no Flex Prompt package
+or configuration wizard.
 
 Git metadata is read without launching `git.exe`. Set `use_nerd_font = false`
 at the top of the Lua file for plain-text symbols, or `show_git = false` to
 disable repository detection. The Nerd Font branch icon remains enabled by
 default; there is no folder icon, frame, colored panel, or time display.
+
+Clink's built-in input colors follow the same palette: soft yellow commands,
+teal aliases, blue flags, gray suggestions and completion descriptions, and blue
+directories in completion lists. Selected completions and popup history entries
+use a dark blue highlight. Flag and argument coloring depends on the command's
+available argmatcher; no extra completion scripts are installed.
+
+These are native color settings applied when Lua loads, with no additional
+prompt hooks, subprocesses, or Git status scans. Unchanged settings are not
+rewritten. Windows Terminal's palette and command output are unchanged. RGB
+input styling requires Clink 1.7 or newer; older versions keep their input colors.
 
 ## 1. Check your Windows installation
 
@@ -220,10 +233,11 @@ To preview an installed option without selecting it:
 "%USERPROFILE%\tools\clink\clink_x64.exe" config prompt show agnoster
 ```
 
-Color themes affect Clink's input/completion colors; this Lua file's prompt
-palette is explicit, so changing a Clink color theme does not replace the Tokyo
-Night prompt colors. Windows Terminal controls the background and terminal
-palette separately.
+Color themes affect Clink's input/completion colors. This Lua file reapplies its
+VS Code inspired input colors on load; remove its native-colors block to keep a
+different Clink theme. The prompt palette is explicit and is not replaced by a
+Clink color theme. Windows Terminal controls the background and terminal palette
+separately.
 
 The Lua prompt yields when a `.clinkprompt` is explicitly selected, retaining
 its history/keybinding setup. Such a prompt may collect Git status using

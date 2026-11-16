@@ -2,20 +2,36 @@
 -- Exercise the real configuration with Clink's documented getclinkprompt contract.
 -- https://github.com/chrisant996/clink/blob/master/clink/app/scripts/prompt.lua
 
-local function load_configuration(active_prompt, has_prompt_api)
+local function load_configuration(active_prompt, has_prompt_api, directory, input_color)
     local callbacks, prompt = {}, nil
     local branch_reads = 0
+    local exit_code = 0
+    local color_writes = 0
     local values = {
         ["history.save"] = true,
         ["autosuggest.enable"] = true,
+        ["clink.colorize_input"] = true,
         ["clink.promptfilter"] = true,
         ["clink.logo"] = "none",
+        ["cmd.get_errorlevel"] = true,
         ["autosuggest.inline"] = true,
+        ["match.coloring_rules"] = "di=38;2;86;156;214:ex=38;2;220;220;170",
+        ["color.input"] = input_color,
     }
     local env = setmetatable({
         settings = {
             get = function(name) return values[name] end,
-            set = function() error("Unchanged settings should not be written") end,
+            parsecolor = function(color)
+                assert(color == "#D4D4D4", "Only the supported fixture setting should be parsed")
+                return "0;38;2;212;212;212"
+            end,
+            set = function(name, value)
+                assert(name == "color.input" and value == "#D4D4D4",
+                    "Unchanged settings should not be written")
+                values[name] = "0;38;2;212;212;212"
+                color_writes = color_writes + 1
+                return true
+            end,
         },
         rl = {
             setvariable = function() return true end,
@@ -33,7 +49,10 @@ local function load_configuration(active_prompt, has_prompt_api)
                 return "main", false
             end,
         },
-        os = { getcwd = function() return [[C:\repo]] end },
+        os = {
+            getcwd = function() return directory or [[C:\repo]] end,
+            geterrorlevel = function() return exit_code end,
+        },
     }, { __index = _G })
 
     if has_prompt_api then
@@ -52,14 +71,16 @@ local function load_configuration(active_prompt, has_prompt_api)
     end
     chunk()
     for _, callback in ipairs(callbacks) do callback() end
-    return prompt, function() return branch_reads end
+    return prompt, function() return branch_reads end,
+        function(value) exit_code = value end,
+        function() return color_writes end
 end
 
 local function assert_lean_prompt(active_prompt, has_prompt_api)
     local prompt, branch_reads = load_configuration(active_prompt, has_prompt_api)
     local rendered, continue_filtering = prompt:filter()
     assert(type(rendered) == "string", "Lean prompt must render when no preset is active")
-    assert(rendered:gsub("\27%[[%d;]*m", "") == "C:\\repo    main\n❯ ")
+    assert(rendered:gsub("\27%[[%d;]*m", "") == "C:\\repo  ·   main\n❯ ")
     assert(continue_filtering == false)
     assert(branch_reads() == 1, "Git branch must refresh when no preset is active")
     prompt:filter()
@@ -74,4 +95,25 @@ local prompt, branch_reads = load_configuration("agnoster", true)
 assert(prompt:filter() == nil, "A selected preset must retain its prompt")
 assert(branch_reads() == 0, "A selected preset must not trigger our branch reader")
 
-print("Passed: inactive empty-string prompt, compatibility cases, active preset, and Git refresh.")
+local status_prompt, _, set_exit_code = load_configuration("", true)
+local success = status_prompt:filter()
+set_exit_code(7)
+local failure = status_prompt:filter()
+assert(success ~= failure, "A failed command must change the prompt symbol's appearance")
+assert(success:gsub("\27%[[%d;]*m", "") == failure:gsub("\27%[[%d;]*m", ""),
+    "Exit status must not change the displayed path or branch")
+
+for _, directory in ipairs({ [[C:\]], [[C:\Users\Test User\projects]], [[\\server\share]], [[\\server\share\]] }) do
+    local path_prompt = load_configuration("", true, directory)
+    local rendered = path_prompt:filter()
+    local plain = rendered:gsub("\27%[[%d;]*m", "")
+    assert(plain:sub(1, #directory) == directory, "Directory formatting must preserve the complete path")
+end
+
+-- Native color settings return normalized SGR, not the saved RGB spelling.
+local _, _, _, changed_writes = load_configuration("", true, nil, "")
+assert(changed_writes() == 1, "A different supported color must be applied")
+local _, _, _, unchanged_writes = load_configuration("", true, nil, "0;38;2;212;212;212")
+assert(unchanged_writes() == 0, "Normalized colors must not be rewritten at startup")
+
+print("Passed: presets, Git refresh, exit status, Windows paths, and normalized color settings.")
