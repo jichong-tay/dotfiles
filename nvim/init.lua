@@ -265,6 +265,9 @@ do
   vim.keymap.set('n', '<C-j>', '<C-w><C-j>', { desc = 'Move focus to the lower window' })
   vim.keymap.set('n', '<C-k>', '<C-w><C-k>', { desc = 'Move focus to the upper window' })
 
+  vim.keymap.set('n', '<C-w>t', '<cmd>tab split<CR>', { desc = 'Open current file in a new tab' })
+  vim.keymap.set('n', '<C-w>b', '<Nop>')
+
   -- NOTE: Some terminals have colliding keymaps or are not able to send distinct keycodes
   -- vim.keymap.set("n", "<C-S-h>", "<C-w>H", { desc = "Move window to the left" })
   -- vim.keymap.set("n", "<C-S-l>", "<C-w>L", { desc = "Move window to the right" })
@@ -872,6 +875,16 @@ do
       })
     end)
   end, { desc = '[T]oggle whole-file side-by-side [d]iff (HEAD)' })
+
+  -- Adjust how many unchanged lines surround each change in native diff views.
+  local function change_diff_context(delta)
+    local context = tonumber(vim.o.diffopt:match 'context:(%d+)') or 6
+    local next_context = math.max(1, context + delta)
+    vim.cmd('set diffopt+=context:' .. next_context)
+    vim.notify(('Diff context: %d lines'):format(next_context), vim.log.levels.INFO)
+  end
+  vim.keymap.set('n', '<leader>h+', function() change_diff_context(5) end, { desc = 'git increase diff context (+5 lines)' })
+  vim.keymap.set('n', '<leader>h-', function() change_diff_context(-5) end, { desc = 'git decrease diff context (-5 lines)' })
 
   -- Native diff groups describe relative changes, not old/new sides. Give each
   -- pane a consistent tint, with a darker shade for its changed words.
@@ -1514,8 +1527,26 @@ do
     local path, suffix = buffer_label(0)
     return (path .. suffix):gsub('%%', '%%%%') .. '%m%r'
   end
+
+  -- Add LSP breadcrumbs to the top bar; cursor movement uses cached symbols.
+  vim.pack.add { gh 'SmiteshP/nvim-navic' }
+  local navic = require 'nvim-navic'
+  navic.setup {
+    icons = { enabled = vim.g.have_nerd_font },
+    highlight = false, -- Inherit the winbar's mode color.
+    separator = ' › ',
+    lsp = {
+      auto_attach = true,
+      preference = { 'ty', 'gopls', 'lua_ls', 'tailwindcss', 'ruff' },
+    },
+  }
   -- Winbar expressions need a globally callable function; keep its code here.
-  _G.DotfilesWinbar = statusline_filename
+  _G.DotfilesWinbar = function()
+    local filename = statusline_filename()
+    if vim.bo.buftype ~= '' or not navic.is_available() then return filename end
+    local location = navic.get_location()
+    return location ~= '' and (filename .. ' › ' .. location) or filename
+  end
   vim.o.winbar = '%<%{%v:lua.DotfilesWinbar()%}'
 
   -- Tabs show only each tab's current file name; the bars keep the full path.
@@ -1659,6 +1690,16 @@ do
       ['ui-select'] = { require('telescope.themes').get_dropdown() },
     },
   }
+
+  -- Show relative numbers and the current line's actual number in Telescope previews.
+  vim.api.nvim_create_autocmd('User', {
+    group = vim.api.nvim_create_augroup('dotfiles-telescope-preview', { clear = true }),
+    pattern = 'TelescopePreviewerLoaded',
+    callback = function()
+      vim.wo.number = true
+      vim.wo.relativenumber = true
+    end,
+  })
 
   -- Enable Telescope extensions if they are installed
   pcall(require('telescope').load_extension, 'fzf')
