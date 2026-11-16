@@ -11,8 +11,8 @@ C:\projects\analytics  ·   main
 
 This is a standalone adaptation of [Flex Prompt's Lean style](https://github.com/chrisant996/clink-flex-prompt#style):
 colored text on two lines, with a subtle separator between the directory and
-branch. The prompt uses a Pearl & steel palette: gray parent folders and separator
-(`#808080`), a bold pearl current folder (`#E0E0E0`), a muted steel Git branch
+branch. The prompt uses a Silver & steel palette: gray parent folders and separator
+(`#808080`), a soft silver current folder (`#B8B8B8`, normal weight), a muted steel Git branch
 (`#8FA3B8`), and a warm gold input marker (`#D7BA7D`). The marker turns red after
 a failed command. Input colors
 are inspired by [VS Code Dark+](https://github.com/microsoft/vscode/blob/main/extensions/theme-defaults/themes/dark_plus.json). The single-file

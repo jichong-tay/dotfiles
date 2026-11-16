@@ -103,9 +103,9 @@ clink.onbeginedit(function()
     initialized = true
 end)
 
--- Pearl & steel prompt with VS Code inspired input colors. No panels or frame.
+-- Silver & steel prompt with VS Code inspired input colors. No panels or frame.
 local parent_color = "\27[38;2;128;128;128m" -- #808080
-local cwd_color = "\27[1;38;2;224;224;224m" -- bold pearl #E0E0E0
+local cwd_color = "\27[38;2;184;184;184m" -- soft silver #B8B8B8, normal weight
 local git_color = "\27[38;2;143;163;184m" -- muted steel #8FA3B8
 local symbol_color = "\27[38;2;215;186;125m" -- warm gold #D7BA7D
 local error_color = "\27[38;2;244;71;71m" -- #F44747
