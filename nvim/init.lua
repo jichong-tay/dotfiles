@@ -1533,21 +1533,101 @@ do
   local navic = require 'nvim-navic'
   navic.setup {
     icons = { enabled = vim.g.have_nerd_font },
-    highlight = false, -- Inherit the winbar's mode color.
+    highlight = false, -- The declaration below uses the editor's own highlights.
     separator = ' › ',
     lsp = {
       auto_attach = true,
       preference = { 'ty', 'gopls', 'lua_ls', 'tailwindcss', 'ruff' },
     },
   }
-  -- Winbar expressions need a globally callable function; keep its code here.
-  _G.DotfilesWinbar = function()
-    local filename = statusline_filename()
-    if vim.bo.buftype ~= '' or not navic.is_available() then return filename end
-    local location = navic.get_location()
-    return location ~= '' and (filename .. ' › ' .. location) or filename
+  -- Cache colored source lines; avoid parsing a declaration on every redraw.
+  local declaration_cache = {}
+  vim.api.nvim_create_autocmd({ 'LspTokenUpdate', 'FileType', 'BufWipeout', 'ColorScheme' }, {
+    group = vim.api.nvim_create_augroup('dotfiles-breadcrumb-colors', { clear = true }),
+    callback = function(ev)
+      if ev.event == 'ColorScheme' then declaration_cache = {} else declaration_cache[ev.buf] = nil end
+    end,
+  })
+  local function declaration_highlight(buf, row, col)
+    local inspected = vim.inspect_pos(buf, row, col, { extmarks = false })
+    local group, priority = 'Normal', -1
+    local function consider(name, rank)
+      if type(name) == 'string' and rank >= priority and vim.api.nvim_get_hl(0, { name = name, link = false }).fg then
+        group, priority = name, rank
+      end
+    end
+    for _, item in ipairs(inspected.syntax) do consider(item.hl_group, 0) end
+    for _, item in ipairs(inspected.treesitter) do
+      consider(item.hl_group, tonumber(item.metadata and item.metadata.priority) or vim.hl.priorities.treesitter)
+    end
+    for _, item in ipairs(inspected.semantic_tokens) do
+      consider(item.opts.hl_group, item.opts.priority or vim.hl.priorities.semantic_tokens)
+    end
+    return group
   end
-  vim.o.winbar = '%<%{%v:lua.DotfilesWinbar()%}'
+  local function declaration_text(buf, row)
+    local line = vim.api.nvim_buf_get_lines(buf, row - 1, row, false)[1]
+    if not line then return nil end
+    local cached = (declaration_cache[buf] or {})[row]
+    if cached and cached.line == line then return cached.text end
+    local indent = #(line:match '^%s*')
+    local text = line:sub(indent + 1):gsub('%s+$', '')
+    local parts, previous, col = {}, nil, indent
+    for _, char in ipairs(vim.fn.split(text, '\\zs')) do
+      local group = declaration_highlight(buf, row - 1, col)
+      if group ~= previous then parts[#parts + 1], previous = '%#' .. group .. '#', group end
+      parts[#parts + 1] = char:gsub('%%', '%%%%'):gsub('%c', ' ')
+      col = col + #char
+    end
+    local colored = table.concat(parts)
+    declaration_cache[buf] = declaration_cache[buf] or {}
+    declaration_cache[buf][row] = { line = line, text = colored }
+    return colored
+  end
+  local function declaration_row(buf, symbol)
+    local row = symbol.scope.start.line
+    local first = vim.api.nvim_buf_get_lines(buf, row - 1, row, false)[1] or ''
+    -- Python symbol ranges include decorators; display the actual def/class line.
+    if vim.bo[buf].filetype == 'python' and first:match '^%s*@' then
+      local last = math.min(symbol.scope['end'].line, row + 64, vim.api.nvim_buf_line_count(buf))
+      for offset, line in ipairs(vim.api.nvim_buf_get_lines(buf, row - 1, last, false)) do
+        local name = line:match '^%s*def%s+([^%s(]+)' or line:match '^%s*async%s+def%s+([^%s(]+)' or line:match '^%s*class%s+([^%s(:]+)'
+        if name == symbol.name then return row + offset - 1 end
+      end
+    end
+    return row
+  end
+
+  -- Click the declaration in either pane; keep a jump back to the old position.
+  _G.DotfilesBreadcrumbClick = function(line, _, button)
+    if button ~= 'l' then return end
+    local win = vim.fn.getmousepos().winid
+    if win == 0 or not vim.api.nvim_win_is_valid(win) then return end
+    vim.api.nvim_set_current_win(win)
+    vim.cmd.normal { "m'", bang = true }
+    vim.api.nvim_win_set_cursor(win, { math.min(line, vim.api.nvim_buf_line_count(0)), 0 })
+    vim.cmd.normal { '^zv', bang = true }
+  end
+
+  -- Put the current declaration before the path so it stays visible in narrow panes.
+  _G.DotfilesWinbar = function()
+    local filename = '%<' .. statusline_filename()
+    if vim.bo.buftype ~= '' or not navic.is_available() then return filename end
+    local data, symbol = navic.get_data() or {}, nil
+    for i = #data, 1, -1 do
+      if data[i].kind == 6 or data[i].kind == 9 or data[i].kind == 12 then symbol = data[i]; break end
+    end
+    symbol = symbol or data[#data]
+    if not symbol then return filename end
+    local buf = vim.api.nvim_get_current_buf()
+    local row = declaration_row(buf, symbol)
+    local text = declaration_text(buf, row)
+    if not text or text == '' then return filename end
+    local icon_group = (symbol.kind == 6 or symbol.kind == 9 or symbol.kind == 12) and '@function' or '@type'
+    local icon = vim.g.have_nerd_font and ('%#' .. icon_group .. '#' .. symbol.icon) or ''
+    return ('%%%d@v:lua.DotfilesBreadcrumbClick@%s%%#LineNr#%d: %s%%X%%*  │  %s'):format(row, icon, row, text, filename)
+  end
+  vim.o.winbar = '%{%v:lua.DotfilesWinbar()%}'
 
   -- Tabs show only each tab's current file name; the bars keep the full path.
   _G.DotfilesTabline = function()
