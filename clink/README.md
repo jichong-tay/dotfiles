@@ -11,9 +11,11 @@ C:\projects\analytics  ·   main
 
 This is a standalone adaptation of [Flex Prompt's Lean style](https://github.com/chrisant996/clink-flex-prompt#style):
 colored text on two lines, with a subtle separator between the directory and
-branch. Colors are inspired by [VS Code Dark+](https://github.com/microsoft/vscode/blob/main/extensions/theme-defaults/themes/dark_plus.json):
-gray parent folders, a bold blue current folder, a purple Git branch, and a
-pale green input marker that turns red after a failed command. The single-file
+branch. The prompt uses a Pearl & steel palette: gray parent folders and separator
+(`#808080`), a bold pearl current folder (`#E0E0E0`), a muted steel Git branch
+(`#8FA3B8`), and a warm gold input marker (`#D7BA7D`). The marker turns red after
+a failed command. Input colors
+are inspired by [VS Code Dark+](https://github.com/microsoft/vscode/blob/main/extensions/theme-defaults/themes/dark_plus.json). The single-file
 implementation keeps the branch-only Git reader and needs no Flex Prompt package
 or configuration wizard.
 
@@ -22,7 +24,7 @@ at the top of the Lua file for plain-text symbols, or `show_git = false` to
 disable repository detection. The Nerd Font branch icon remains enabled by
 default; there is no folder icon, frame, colored panel, or time display.
 
-Clink's built-in input colors follow the same palette: soft yellow commands,
+Clink's built-in input colors retain the VS Code inspired palette: soft yellow commands,
 teal aliases, blue flags, gray suggestions and completion descriptions, and blue
 directories in completion lists. Selected completions and popup history entries
 use a dark blue highlight. Flag and argument coloring depends on the command's

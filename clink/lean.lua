@@ -103,11 +103,11 @@ clink.onbeginedit(function()
     initialized = true
 end)
 
--- VS Code Dark+ inspired palette. No background panels or frame.
+-- Pearl & steel prompt with VS Code inspired input colors. No panels or frame.
 local parent_color = "\27[38;2;128;128;128m" -- #808080
-local cwd_color = "\27[1;38;2;86;156;214m" -- bold #569CD6
-local git_color = "\27[38;2;197;134;192m" -- #C586C0
-local symbol_color = "\27[38;2;181;206;168m" -- #B5CEA8
+local cwd_color = "\27[1;38;2;224;224;224m" -- bold pearl #E0E0E0
+local git_color = "\27[38;2;143;163;184m" -- muted steel #8FA3B8
+local symbol_color = "\27[38;2;215;186;125m" -- warm gold #D7BA7D
 local error_color = "\27[38;2;244;71;71m" -- #F44747
 local reset = "\27[0m"
 local symbol = use_nerd_font and "❯" or ">"
