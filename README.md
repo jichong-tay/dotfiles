@@ -1,6 +1,11 @@
 # dotfiles
 My personal development environment configurations
 
+## Set up Clink on Windows
+
+See [clink/README.md](clink/README.md) for the single Lua configuration file
+and CMD-only setup instructions for Windows Terminal.
+
 ## Keep the local Neovim config in sync
 
 The repository is the source of truth. Make config changes here, then run this from the repository root to sync them to Neovim:
