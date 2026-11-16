@@ -304,7 +304,7 @@ To recover afterwards, unstage the file with `git restore --staged -- <file>` an
 
 ### Read the statusline
 
-The top bar shows code context and unsaved (`[+]`) or read-only (`[RO]`) flags. The file path stays in the bottom statusline, and tabs show filenames. Paths are not abbreviated by segment; paths wider than the pane are truncated to fit. The active tab and bottom Git information follow the mode color: blue for Normal, green for Insert, purple for Visual, red for Replace, yellow for Command, and cyan for other modes. Backgrounds remain transparent and inactive panes stay muted. Error/warning counts keep their diagnostic colors.
+The top bar shows code context and unsaved (`[+]`) or read-only (`[RO]`) flags. The file path stays in the bottom statusline, and tabs show filenames. Paths are not abbreviated by segment; paths wider than the pane are truncated to fit. The active tab and bottom Git information follow the mode color: blue for Normal, green for Insert, purple for Visual, red for Replace, yellow for Command, and cyan for other modes. Editor backgrounds remain transparent and inactive panes stay muted. Error/warning counts keep their diagnostic colors.
 
 The top bar shows the parent class/module and current function's declaration, for example `ReviewService › ↑23 ↓12 def _partial_review(self, token):`. It shows the actual source line with its editor syntax/semantic colors and a Nerd Font icon when enabled. Leading indentation is omitted; multiline declarations show their first physical line. The first distance points to the definition and the second to the function's final line: `↑23 ↓12` means the start is 23 lines above and the end is 12 lines below your cursor. `0` means the corresponding boundary is on your current line. Click a parent name or declaration to jump there; **Ctrl+o** returns to your previous position. Outside functions, the innermost available symbol is shown instead.
 
@@ -318,7 +318,7 @@ The active bottom statusline also shows the short mode (`N`, `I`, or `V`), error
 
 Git review panes use readable labels such as `Git changes`, `src/file.lua [HEAD]`, or `src/file.lua [Index]`; terminal panes show `Terminal`. Nerd Font support is enabled for both macOS and Windows; select your installed Nerd Font in the terminal's font settings. Setting `vim.g.have_nerd_font = false` restores plain-text fallbacks, including `ahead` and `behind` labels.
 
-The active tab has a small `▎` marker and a bold, underlined label that follows the mode color. Inactive tabs and pane headers stay muted, and split separators use a subtle gray-blue line. All of these backgrounds remain transparent.
+The active tab uses a muted fill and a bold label that follow the mode color, with no underline or vertical marker. Inactive tabs and pane headers stay muted with transparent backgrounds, and split separators use a subtle gray-blue line.
 
 A thin, static `mini.indentscope` guide marks the current indented block in source panes. It uses the existing mini.nvim package, adds no shortcuts, and scans at most 500 lines in either direction. The guide is hidden in Git comparisons, terminals, and floating/special buffers. It needs no additional Windows setup or build tools.
 

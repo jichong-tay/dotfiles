@@ -1341,7 +1341,7 @@ do
       Pmenu = { bg = 'NONE' },
       PmenuSbar = { bg = 'NONE' },
       TabLine = { fg = '#7f8ea3', bg = 'NONE' },
-      TabLineSel = { fg = '#93c5fd', bg = 'NONE', bold = true, underline = true, sp = '#93c5fd' },
+      TabLineSel = { fg = '#93c5fd', bg = '#26384d', bold = true },
       TabLineFill = { bg = 'NONE' },
       WinBar = { fg = '#93c5fd', bg = 'NONE', bold = true },
       WinBarNC = { fg = '#7f8ea3', bg = 'NONE' },
@@ -1699,7 +1699,7 @@ do
       label = (label .. suffix):gsub('%%', '%%%%')
       if vim.bo[buf].modified then label = label .. ' +' end
       local active = tab == current
-      parts[#parts + 1] = ('%%#%s#%%%dT %s%s '):format(active and 'TabLineSel' or 'TabLine', index, active and '▎ ' or '  ', label)
+      parts[#parts + 1] = ('%%#%s#%%%dT %s '):format(active and 'TabLineSel' or 'TabLine', index, label)
     end
     return table.concat(parts) .. '%#TabLineFill#%T'
   end
@@ -1741,8 +1741,16 @@ do
     local _, mode_hl = statusline.section_mode { trunc_width = math.huge }
     local mode_colors = vim.api.nvim_get_hl(0, { name = mode_hl, link = false })
     local accent = mode_colors.bg or '#93c5fd'
+    local tab_background = ({
+      MiniStatuslineModeNormal = '#26384d',
+      MiniStatuslineModeInsert = '#243e31',
+      MiniStatuslineModeVisual = '#37304c',
+      MiniStatuslineModeReplace = '#442b32',
+      MiniStatuslineModeCommand = '#403a26',
+      MiniStatuslineModeOther = '#263d45',
+    })[mode_hl] or '#26384d'
     vim.api.nvim_set_hl(0, 'WinBar', { fg = accent, bg = 'NONE', bold = true })
-    vim.api.nvim_set_hl(0, 'TabLineSel', { fg = accent, bg = 'NONE', bold = true, underline = true, sp = accent })
+    vim.api.nvim_set_hl(0, 'TabLineSel', { fg = accent, bg = tab_background, bold = true })
     vim.api.nvim_set_hl(0, 'MiniStatuslineDevinfo', { fg = accent, bg = 'NONE' })
     vim.cmd 'redrawstatus!'
   end
