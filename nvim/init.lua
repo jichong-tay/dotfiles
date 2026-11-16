@@ -1340,11 +1340,14 @@ do
       DotfilesHoverBorder = { fg = '#64748b', bg = '#252526' },
       Pmenu = { bg = 'NONE' },
       PmenuSbar = { bg = 'NONE' },
-      TabLine = { fg = '#94a3b8', bg = 'NONE' },
-      TabLineSel = { fg = '#0f172a', bg = '#93c5fd', bold = true },
+      TabLine = { fg = '#7f8ea3', bg = 'NONE' },
+      TabLineSel = { fg = '#93c5fd', bg = 'NONE', bold = true, underline = true, sp = '#93c5fd' },
       TabLineFill = { bg = 'NONE' },
       WinBar = { fg = '#93c5fd', bg = 'NONE', bold = true },
-      WinBarNC = { fg = '#94a3b8', bg = 'NONE' },
+      WinBarNC = { fg = '#7f8ea3', bg = 'NONE' },
+      WinSeparator = { fg = '#475569', bg = 'NONE' },
+      MiniIndentscopeSymbol = { fg = '#475569', bg = 'NONE' },
+      MiniIndentscopeSymbolOff = { link = 'MiniIndentscopeSymbol' },
       -- Muted line backgrounds and darker changed words preserve syntax colors.
       DotfilesDiffOld = { bg = '#322027' },
       DotfilesDiffNew = { bg = '#1d3025' },
@@ -1367,6 +1370,7 @@ do
       StatusLineNC = { bg = 'NONE' },
       MiniStatuslineFilename = { fg = '#d4d4d4', bg = 'NONE' },
       MiniStatuslineDevinfo = { fg = '#93c5fd', bg = 'NONE' },
+      MiniStatuslineFileinfo = { fg = '#94a3b8', bg = 'NONE' },
       MiniStatuslineInactive = { fg = '#94a3b8', bg = 'NONE' },
       MiniStatuslineModeNormal = { fg = '#0f172a', bg = '#93c5fd', bold = true },
       MiniStatuslineModeInsert = { fg = '#0f172a', bg = '#86efac', bold = true },
@@ -1402,6 +1406,32 @@ do
     -- Used for backwards compatibility with plugins that require `nvim-web-devicons` (e.g. telescope.nvim)
     MiniIcons.mock_nvim_web_devicons()
   end
+
+  -- Draw a quiet indent scope in source panes, with no animation or extra keys.
+  local indentscope = require 'mini.indentscope'
+  local function scope_visible(buf)
+    local unified = package.loaded['gitsigns.unified']
+    return buf == vim.api.nvim_get_current_buf() and vim.api.nvim_buf_is_valid(buf) and vim.bo[buf].buftype == ''
+      and not vim.wo.diff and vim.api.nvim_win_get_config(0).relative == ''
+      and not (unified and unified.get_view())
+  end
+  indentscope.setup {
+    symbol = '│',
+    draw = {
+      delay = 150,
+      animation = indentscope.gen_animation.none(),
+      predicate = function(scope) return not scope.body.is_incomplete and scope_visible(scope.buf_id) end,
+    },
+    options = { n_lines = 500, try_as_border = true, indent_at_cursor = false },
+    mappings = { object_scope = '', object_scope_with_border = '', goto_top = '', goto_bottom = '' },
+  }
+  -- Clear a previous guide when entering a comparison, terminal, or popup.
+  vim.api.nvim_create_autocmd({ 'BufEnter', 'WinEnter', 'WinLeave', 'CursorMoved', 'CursorMovedI' }, {
+    group = vim.api.nvim_create_augroup('dotfiles-scope-visibility', { clear = true }),
+    callback = function(ev)
+      if ev.event == 'WinLeave' or not scope_visible(vim.api.nvim_get_current_buf()) then indentscope.undraw() end
+    end,
+  })
 
   -- Better Around/Inside textobjects
   --
@@ -1527,6 +1557,14 @@ do
     local path, suffix = buffer_label(0)
     return (path .. suffix):gsub('%%', '%%%%') .. '%m%r'
   end
+  local function statusline_file_settings()
+    if vim.bo.buftype ~= '' then return '' end
+    local filetype = vim.bo.filetype ~= '' and vim.bo.filetype or 'text'
+    local indent = vim.bo.expandtab and ('Spaces:' .. vim.fn.shiftwidth()) or ('Tabs:' .. vim.bo.tabstop)
+    local ending = ({ unix = 'LF', dos = 'CRLF', mac = 'CR' })[vim.bo.fileformat]
+    local settings = filetype .. ' · ' .. indent .. ' · ' .. ending
+    return (settings:gsub('%%', '%%%%'))
+  end
 
   -- Add LSP breadcrumbs to the top bar; cursor movement uses cached symbols.
   vim.pack.add { gh 'SmiteshP/nvim-navic' }
@@ -1609,29 +1647,46 @@ do
     vim.cmd.normal { '^zv', bang = true }
   end
 
-  -- Show the path first, followed by the declaration's distance from the cursor.
+  -- Reserve the top bar for code context; file paths remain in the bottom bar.
   _G.DotfilesWinbar = function()
-    local filename = '%<' .. statusline_filename()
-    if vim.bo.buftype ~= '' or not navic.is_available() then return filename end
-    local data, symbol = navic.get_data() or {}, nil
+    local label, revision, is_path = buffer_label(0)
+    local fallback = (is_path and (revision ~= '' and 'Git' .. revision or '') or label):gsub('%%', '%%%%') .. '%m%r'
+    if vim.bo.buftype ~= '' or not navic.is_available() then return fallback end
+    local data, symbol, symbol_index = navic.get_data() or {}, nil, nil
     for i = #data, 1, -1 do
-      if data[i].kind == 6 or data[i].kind == 9 or data[i].kind == 12 then symbol = data[i]; break end
+      if data[i].kind == 6 or data[i].kind == 9 or data[i].kind == 12 then symbol_index = i; break end
     end
-    symbol = symbol or data[#data]
-    if not symbol then return filename end
+    symbol_index = symbol_index or #data
+    symbol = data[symbol_index]
+    if not symbol then return fallback end
     local buf = vim.api.nvim_get_current_buf()
     local row = declaration_row(buf, symbol)
     local text = declaration_text(buf, row)
-    if not text or text == '' then return filename end
+    if not text or text == '' then return fallback end
     local cursor = vim.api.nvim_win_get_cursor(0)[1]
-    local distance = (row < cursor and '↑' or row > cursor and '↓' or '') .. math.abs(cursor - row)
+    local function distance(target)
+      return (target < cursor and '↑' or target > cursor and '↓' or '') .. math.abs(cursor - target)
+    end
+    -- LSP range ends are exclusive: column zero belongs to the preceding line.
+    local last = symbol.scope['end'].line - (symbol.scope['end'].character == 0 and 1 or 0)
+    last = math.max(row, math.min(last, vim.api.nvim_buf_line_count(buf)))
+    local parents = {}
+    for i = 1, symbol_index - 1 do
+      local parent = data[i]
+      if parent.kind ~= 1 then
+        local group = (parent.kind == 2 or parent.kind == 3 or parent.kind == 4) and '@module'
+          or (parent.kind == 6 or parent.kind == 9 or parent.kind == 12) and '@function' or '@type'
+        local name = parent.name:gsub('%%', '%%%%'):gsub('%c', ' ')
+        parents[#parents + 1] = ('%%%d@v:lua.DotfilesBreadcrumbClick@%%#%s#%s%%X%%* › '):format(declaration_row(buf, parent), group, name)
+      end
+    end
     local icon_group = (symbol.kind == 6 or symbol.kind == 9 or symbol.kind == 12) and '@function' or '@type'
     local icon = vim.g.have_nerd_font and ('%#' .. icon_group .. '#' .. symbol.icon) or ''
-    return ('%s  │  %%%d@v:lua.DotfilesBreadcrumbClick@%s%%#LineNr#%s %s%%X%%*'):format(filename, row, icon, distance, text)
+    return table.concat(parents) .. ('%%%d@v:lua.DotfilesBreadcrumbClick@%s%%#LineNr#%s %s %s%%X%%*%%m%%r'):format(row, icon, distance(row), distance(last), text)
   end
   vim.o.winbar = '%{%v:lua.DotfilesWinbar()%}'
 
-  -- Tabs show only each tab's current file name; the bars keep the full path.
+  -- Tabs show only each tab's current file name; the bottom bar keeps the full path.
   _G.DotfilesTabline = function()
     local parts, current = {}, vim.api.nvim_get_current_tabpage()
     for index, tab in ipairs(vim.api.nvim_list_tabpages()) do
@@ -1643,7 +1698,8 @@ do
       end
       label = (label .. suffix):gsub('%%', '%%%%')
       if vim.bo[buf].modified then label = label .. ' +' end
-      parts[#parts + 1] = ('%%#%s#%%%dT %s '):format(tab == current and 'TabLineSel' or 'TabLine', index, label)
+      local active = tab == current
+      parts[#parts + 1] = ('%%#%s#%%%dT %s%s '):format(active and 'TabLineSel' or 'TabLine', index, active and '▎ ' or '  ', label)
     end
     return table.concat(parts) .. '%#TabLineFill#%T'
   end
@@ -1668,6 +1724,7 @@ do
           { hl = 'MiniStatuslineDevinfo', strings = { '%{get(b:, "git_ahead_behind", "")}' } },
           { hl = 'DiagnosticError', strings = { errors > 0 and ('E' .. errors) or '' } },
           { hl = 'DiagnosticWarn', strings = { warnings > 0 and ('W' .. warnings) or '' } },
+          { hl = 'MiniStatuslineFileinfo', strings = { statusline_file_settings() } },
           { hl = mode_hl, strings = { '%l:%v' } },
         }
       end,
@@ -1679,12 +1736,13 @@ do
     },
   }
 
-  -- Match the active filepath and Git accents to the existing mode badges.
+  -- Match the active filepath, tab, and Git accents to the existing mode badges.
   local function sync_bar_colors()
     local _, mode_hl = statusline.section_mode { trunc_width = math.huge }
     local mode_colors = vim.api.nvim_get_hl(0, { name = mode_hl, link = false })
     local accent = mode_colors.bg or '#93c5fd'
     vim.api.nvim_set_hl(0, 'WinBar', { fg = accent, bg = 'NONE', bold = true })
+    vim.api.nvim_set_hl(0, 'TabLineSel', { fg = accent, bg = 'NONE', bold = true, underline = true, sp = accent })
     vim.api.nvim_set_hl(0, 'MiniStatuslineDevinfo', { fg = accent, bg = 'NONE' })
     vim.cmd 'redrawstatus!'
   end
@@ -1797,7 +1855,7 @@ do
   vim.keymap.set({ 'n', 'v' }, '<leader>sw', builtin.grep_string, { desc = '[S]earch current [W]ord' })
   vim.keymap.set('n', '<leader>sg', builtin.live_grep, { desc = '[S]earch by [G]rep' })
   vim.keymap.set('n', '<leader>sd', builtin.diagnostics, { desc = '[S]earch [D]iagnostics' })
-  vim.keymap.set('n', '<leader>sr', builtin.resume, { desc = '[S]earch [R]esume' })
+  vim.keymap.set('n', '<leader>sr', builtin.resume, { desc = '[S]earch [R]esume last query/results' })
   vim.keymap.set('n', '<leader>s.', builtin.oldfiles, { desc = '[S]earch Recent Files ("." for repeat)' })
   vim.keymap.set('n', '<leader>sc', builtin.commands, { desc = '[S]earch [C]ommands' })
   vim.keymap.set('n', '<leader><leader>', builtin.buffers, { desc = '[ ] Find existing buffers' })
