@@ -1609,7 +1609,7 @@ do
     vim.cmd.normal { '^zv', bang = true }
   end
 
-  -- Put the current declaration before the path so it stays visible in narrow panes.
+  -- Show the path first, followed by the declaration's distance from the cursor.
   _G.DotfilesWinbar = function()
     local filename = '%<' .. statusline_filename()
     if vim.bo.buftype ~= '' or not navic.is_available() then return filename end
@@ -1623,9 +1623,11 @@ do
     local row = declaration_row(buf, symbol)
     local text = declaration_text(buf, row)
     if not text or text == '' then return filename end
+    local cursor = vim.api.nvim_win_get_cursor(0)[1]
+    local distance = (row < cursor and '↑' or row > cursor and '↓' or '') .. math.abs(cursor - row)
     local icon_group = (symbol.kind == 6 or symbol.kind == 9 or symbol.kind == 12) and '@function' or '@type'
     local icon = vim.g.have_nerd_font and ('%#' .. icon_group .. '#' .. symbol.icon) or ''
-    return ('%%%d@v:lua.DotfilesBreadcrumbClick@%s%%#LineNr#%d: %s%%X%%*  │  %s'):format(row, icon, row, text, filename)
+    return ('%s  │  %%%d@v:lua.DotfilesBreadcrumbClick@%s%%#LineNr#%s %s%%X%%*'):format(filename, row, icon, distance, text)
   end
   vim.o.winbar = '%{%v:lua.DotfilesWinbar()%}'
 
