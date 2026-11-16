@@ -8,7 +8,7 @@ it. Inline mode needs `autosuggest.enable` and, on current versions,
 list. The `history` strategy uses matching history; Tab completion is separate.
 [Official documentation](https://chrisant996.github.io/clink/clink.html#inline-suggestions)
 
-[Our Lua](../../clink/clink.lua) enables suggestions, leaves strategy/list defaults
+[Our Lua](../../clink/lean.lua) enables suggestions, leaves strategy/list defaults
 inherited, and imports no Cmder history. Test with a newly executed command.
 Autosuggestions require 1.2.47+.
 [Changelog](https://chrisant996.github.io/clink/clink.html#v1.2.47)

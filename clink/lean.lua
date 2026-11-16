@@ -1,10 +1,17 @@
 -- All custom Clink configuration lives here; no .inputrc is required.
+-- Keep the name lean.lua; clink.lua is a special compatibility filename.
 -- Put this file in ONE script directory listed by clink_x64.exe info.
 -- Requires Clink 1.7.0 or newer with the Git prompt enabled. No subprocesses.
 -- Standalone adaptation of Flex Prompt's Lean look: colored text, no panels.
 
 local show_git = true
 local use_nerd_font = true -- Set false if a Nerd Font is unavailable.
+
+local function has_selected_prompt()
+    local name = clink.getclinkprompt and clink.getclinkprompt()
+    -- Clink returns an empty string when inactive; empty strings are truthy in Lua.
+    return name ~= nil and name ~= ""
+end
 
 -- settings.set persists changes, so avoid writing unchanged values.
 local function configure(name, value)
@@ -74,7 +81,7 @@ local git_text = ""
 clink.onbeginedit(function()
     git_text = ""
     if not show_git then return end
-    if clink.getclinkprompt and clink.getclinkprompt() then return end
+    if has_selected_prompt() then return end
 
     local git_dir = git.getgitdir()
     if not git_dir then return end
@@ -95,7 +102,7 @@ local prompt = clink.promptfilter(30)
 
 function prompt:filter()
     -- Let an explicitly selected built-in .clinkprompt take over the layout.
-    if clink.getclinkprompt and clink.getclinkprompt() then return end
+    if has_selected_prompt() then return end
     return reset .. cwd_color .. os.getcwd() .. reset .. git_text
         .. "\n" .. symbol_color .. symbol .. reset .. " ", false
 end

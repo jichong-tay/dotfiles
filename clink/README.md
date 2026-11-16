@@ -1,6 +1,6 @@
 # Clink: Lean style in one Lua file
 
-`clink.lua` contains the prompt, Git branch, Nerd Font icons, completion
+`lean.lua` contains the prompt, Git branch, Nerd Font icons, completion
 preferences, history settings, and keyboard shortcuts. No `.inputrc`, PowerShell, extra runtime, or administrator
 access is required. Clink still stores its own settings and history files.
 
@@ -61,7 +61,7 @@ To disable automatic Clink startup:
 ```
 
 Existing CMD sessions keep Clink until closed. Uninstalling AutoRun does not
-delete `clink.lua` or saved history. See [Clink's AutoRun usage](https://chrisant996.github.io/clink/#usage)
+delete `lean.lua` or saved history. See [Clink's AutoRun usage](https://chrisant996.github.io/clink/#usage)
 or run `"%USERPROFILE%\tools\clink\clink_x64.exe" autorun --help` for available
 options.
 
@@ -70,14 +70,20 @@ options.
 From the **dotfiles repository root on Windows**, run:
 
 ```cmd
-copy /-Y "clink\clink.lua" "%USERPROFILE%\tools\clink\clink.lua"
+copy /-Y "clink\lean.lua" "%USERPROFILE%\tools\clink\lean.lua"
 ```
 
-Alternatively, copy `clink.lua` using File Explorer. Keep the Clink installation
+Keep the portable package's existing `clink.lua` file. It is an intentionally
+blank compatibility file; our custom configuration must be named `lean.lua`.
+Clink treats `clink.lua` specially and skips that name during normal script
+discovery. See the [bundled file](https://github.com/chrisant996/clink/blob/master/clink/app/src/loader/clink.lua)
+and [script loader](https://github.com/chrisant996/clink/blob/master/clink/app/src/host/host_lua.cpp#L154-L232).
+
+Alternatively, copy `lean.lua` using File Explorer. Keep the Clink installation
 and its DLLs together. Do not overwrite an existing custom Lua file without
 backing it up.
 
-Keep only one copy of `clink.lua` loaded.
+Keep only one copy of `lean.lua` loaded.
 If you previously registered the repo folder with `installscripts`, remove
 that registration before also loading a copied file. From the repo root:
 
@@ -158,7 +164,7 @@ filesystem checks too.
 Windows Terminal stores this under its profile's `font.face` setting; see
 [Microsoft's appearance settings](https://learn.microsoft.com/en-us/windows/terminal/customize-settings/profile-appearance#font-face).
 If icons show as boxes or overlap, verify the selected family or set
-`use_nerd_font = false`. Save `clink.lua` as UTF-8 after editing it.
+`use_nerd_font = false`. Save `lean.lua` as UTF-8 after editing it.
 
 ## Migrate Cmder history
 
@@ -227,7 +233,7 @@ fast-only Git behavior does not extend to other prompt scripts. See
 
 ## Undo
 
-Move the copied `clink.lua` out of the script directory, restore your settings
+Move the copied `lean.lua` out of the script directory, restore your settings
 backup, and open a fresh CMD tab. Lua changes Clink's saved settings, so removing
 the script alone does not revert those settings. Your history and existing
 Clink AutoRun installation can remain in place.
