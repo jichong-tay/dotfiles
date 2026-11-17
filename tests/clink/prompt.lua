@@ -2,11 +2,12 @@
 -- Exercise the real configuration with Clink's documented getclinkprompt contract.
 -- https://github.com/chrisant996/clink/blob/master/clink/app/scripts/prompt.lua
 
-local function load_configuration(active_prompt, has_prompt_api, directory, input_color)
+local function load_configuration(active_prompt, has_prompt_api, directory, input_color, environment)
     local callbacks, prompt = {}, nil
     local branch_reads = 0
     local exit_code = 0
     local color_writes = 0
+    environment = environment or {}
     local values = {
         ["history.save"] = true,
         ["autosuggest.enable"] = true,
@@ -52,6 +53,7 @@ local function load_configuration(active_prompt, has_prompt_api, directory, inpu
         os = {
             getcwd = function() return directory or [[C:\repo]] end,
             geterrorlevel = function() return exit_code end,
+            getenv = function(name) return environment[name] end,
         },
     }, { __index = _G })
 
@@ -116,4 +118,37 @@ assert(changed_writes() == 1, "A different supported color must be applied")
 local _, _, _, unchanged_writes = load_configuration("", true, nil, "0;38;2;212;212;212")
 assert(unchanged_writes() == 0, "Normalized colors must not be rewritten at startup")
 
-print("Passed: presets, Git refresh, exit status, Windows paths, and normalized color settings.")
+-- Activation changes CMD's PROMPT, but our replacement must display the active
+-- environment itself. Omitting it (the original bug) fails this real filter.
+local environment = { VIRTUAL_ENV = [[C:\projects\analytics\.venv]] }
+local env_prompt, env_branch_reads = load_configuration("", true, nil, nil, environment)
+local function plain_environment_prompt()
+    local rendered = env_prompt:filter("(.venv) C:\\repo> ")
+    return rendered:gsub("\27%[[%d;]*m", "")
+end
+assert(plain_environment_prompt() == "C:\\repo  ·   main  ·  (.venv)\n❯ ",
+    "An activated Python environment must appear in the custom prompt")
+
+environment.VIRTUAL_ENV_PROMPT = "data science"
+assert(plain_environment_prompt():find("(data science)", 1, true), "Honor a custom environment name")
+environment.VIRTUAL_ENV_PROMPT = "(data science) "
+assert(plain_environment_prompt():find("(data science)", 1, true), "Normalize older wrapped prompt names")
+assert(not plain_environment_prompt():find("((data science))", 1, true), "Do not double-wrap the label")
+environment.VIRTUAL_ENV_PROMPT = ""
+environment.VIRTUAL_ENV = [[C:\Users\Test User\my env\]]
+assert(plain_environment_prompt():find("(my env)", 1, true), "Handle spaces and trailing path separators")
+
+environment.VIRTUAL_ENV = nil
+environment.VIRTUAL_ENV_PROMPT = "stale label"
+assert(plain_environment_prompt() == "C:\\repo  ·   main\n❯ ",
+    "Deactivation must hide the label, even if a prompt name remains")
+environment.CONDA_PREFIX = [[C:\tools\miniconda\envs\analysis]]
+environment.CONDA_DEFAULT_ENV = "analysis"
+assert(plain_environment_prompt():find("(analysis)", 1, true), "Show an activated Conda environment")
+environment.VIRTUAL_ENV = [[C:\repo\.venv]]
+environment.VIRTUAL_ENV_PROMPT = ".venv"
+assert(plain_environment_prompt():find("(.venv)", 1, true), "A nested venv takes precedence over Conda")
+assert(not plain_environment_prompt():find("(analysis)", 1, true), "Show only the active inner environment")
+assert(env_branch_reads() == 1, "Environment changes must not add Git metadata reads on redraw")
+
+print("Passed: presets, Git refresh, exit status, Windows paths, colors, and Python activation/deactivation.")

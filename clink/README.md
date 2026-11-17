@@ -1,6 +1,6 @@
 # Clink: Lean style in one Lua file
 
-`lean.lua` contains the prompt, Git branch, Nerd Font icons, completion
+`lean.lua` contains the prompt, Git branch, active Python environment, Nerd Font icons, completion
 preferences, history settings, and keyboard shortcuts. No `.inputrc`, PowerShell, extra runtime, or administrator
 access is required. Clink still stores its own settings and history files.
 
@@ -163,6 +163,39 @@ to a subprocess. See the [native Git API](https://chrisant996.github.io/clink/cl
 Dirty-file counts and ahead/behind counts are not collected. If repository
 metadata lives on a slow network drive, set `show_git = false` to avoid those
 filesystem checks too.
+
+## Python environments
+
+The first prompt line includes the activated environment in the same steel color
+as the Git branch:
+
+```text
+C:\projects\analytics  ·   main  ·  (.venv)
+❯ _
+```
+
+For a standard Python or uv virtual environment, activate it in CMD with:
+
+```cmd
+.venv\Scripts\activate.bat
+```
+
+Use your environment's actual path if it is not named `.venv`. Run `deactivate`
+to leave it. The label updates when you activate, switch, or deactivate, without
+reloading Clink. Conda environments activated with `conda activate` are also
+shown; a nested virtual environment takes precedence.
+
+Activation normally changes CMD's `PROMPT`, which our Lua prompt replaces.
+Instead, the script reads `VIRTUAL_ENV` and an optional `VIRTUAL_ENV_PROMPT`, or
+`CONDA_PREFIX` and `CONDA_DEFAULT_ENV`. It falls back to the environment folder's
+name when a display name is unavailable. These are memory-only lookups: no
+Python, uv, or Conda process, and no directory scan.
+See [Python's CMD activation script](https://github.com/python/cpython/blob/3.14/Lib/venv/scripts/nt/activate.bat)
+and [Conda's activation implementation](https://github.com/conda/conda/blob/main/conda/activate.py).
+
+The indicator shows an environment activated in the current CMD session. Merely
+having a `.venv` directory, or using `uv run` for a single command, does not
+activate the surrounding shell; see [uv's project environment guide](https://docs.astral.sh/uv/guides/projects/#running-commands).
 
 ## Install a Nerd Font without administrator access
 

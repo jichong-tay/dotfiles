@@ -124,6 +124,31 @@ local function format_directory()
     return parent_color .. parent .. reset .. cwd_color .. folder .. reset
 end
 
+local function format_environment()
+    -- Activation scripts set these in CMD. Read them at render time so activate,
+    -- deactivate, and environment switches appear immediately, without a process
+    -- launch or filesystem scan. A nested venv takes precedence over Conda.
+    local prefix = os.getenv("VIRTUAL_ENV")
+    local name = os.getenv("VIRTUAL_ENV_PROMPT")
+    if not prefix or prefix == "" then
+        prefix = os.getenv("CONDA_PREFIX")
+        name = os.getenv("CONDA_DEFAULT_ENV")
+    end
+    if not prefix or prefix == "" then return "" end
+
+    if name then
+        name = name:gsub("[%c]", ""):match("^%s*(.-)%s*$")
+        -- Older activators include parentheses and trailing space in the name.
+        name = name:match("^%((.*)%)$") or name
+    end
+    if not name or name == "" then
+        name = prefix:gsub("[\\/]+$", ""):match("([^\\/]+)$")
+    end
+    if not name or name == "" then return "" end
+
+    return parent_color .. separator .. reset .. git_color .. "(" .. name .. ")" .. reset
+end
+
 if show_git then
     assert(git and git.getgitdir and git.getbranch,
         "Git prompt requires Clink 1.7.0 or newer; alternatively set show_git = false")
@@ -157,6 +182,6 @@ function prompt:filter()
     -- Let an explicitly selected built-in .clinkprompt take over the layout.
     if has_selected_prompt() then return end
     local marker_color = os.geterrorlevel() == 0 and symbol_color or error_color
-    return reset .. format_directory() .. git_text
+    return reset .. format_directory() .. git_text .. format_environment()
         .. "\n" .. marker_color .. symbol .. reset .. " ", false
 end
