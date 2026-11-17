@@ -34,6 +34,15 @@ if settings.get("autosuggest.inline") ~= nil then
     configure("autosuggest.inline", true)
 end
 
+-- CMD does not expand a literal ~ when Enter is pressed. Rewrite only this
+-- standalone shortcut; leave other paths and compound commands untouched.
+clink.onfilterinput(function(line)
+    local command = line:lower()
+    if command:match("^%s*cd%s+~%s*$") or command:match("^%s*cd%s+/d%s+~%s*$") then
+        return [[cd /d "%USERPROFILE%"]]
+    end
+end)
+
 -- Native colors only: applied at script load, with no new editing hooks.
 -- Clink 1.7+ parses RGB colors; leave older versions' colors alone.
 if settings.parsecolor then

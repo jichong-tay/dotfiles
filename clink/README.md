@@ -148,6 +148,22 @@ Windows Terminal's CMD profile should launch `cmd.exe` without `/d` and without
 another Clink injection command. `/d` bypasses AutoRun. Start with a dark color
 scheme, modest padding, and acrylic disabled.
 
+## Home directory shortcut
+
+Type `cd ~` and press Enter to open your user profile. The Lua file rewrites
+this standalone command to `cd /d "%USERPROFILE%"`; `/d` switches drives as
+well as directories. `cd /d ~` and uppercase spellings also work. This uses
+Clink's native [input-filter API](https://chrisant996.github.io/clink/clink.html#clink.onfilterinput)
+and CMD's built-in `cd`, with no extra executable.
+
+This shortcut applies to interactive Clink sessions. For batch files or a path
+inside your profile, use the environment variable directly:
+
+```cmd
+cd /d "%USERPROFILE%"
+cd /d "%USERPROFILE%\Documents"
+```
+
 ## Git information
 
 The prompt shows the branch, or `@` followed by the abbreviated commit when

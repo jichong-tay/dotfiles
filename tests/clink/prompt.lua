@@ -4,6 +4,7 @@
 
 local function load_configuration(active_prompt, has_prompt_api, directory, input_color, environment)
     local callbacks, prompt = {}, nil
+    local input_filters = {}
     local branch_reads = 0
     local exit_code = 0
     local color_writes = 0
@@ -40,6 +41,7 @@ local function load_configuration(active_prompt, has_prompt_api, directory, inpu
         },
         clink = {
             onbeginedit = function(callback) callbacks[#callbacks + 1] = callback end,
+            onfilterinput = function(callback) input_filters[#input_filters + 1] = callback end,
             promptfilter = function() prompt = {}; return prompt end,
         },
         git = {
@@ -75,7 +77,15 @@ local function load_configuration(active_prompt, has_prompt_api, directory, inpu
     for _, callback in ipairs(callbacks) do callback() end
     return prompt, function() return branch_reads end,
         function(value) exit_code = value end,
-        function() return color_writes end
+        function() return color_writes end,
+        function(line)
+            for _, callback in ipairs(input_filters) do
+                local replacement, continue_filtering = callback(line)
+                if replacement ~= nil then line = replacement end
+                if continue_filtering == false then break end
+            end
+            return line
+        end
 end
 
 local function assert_lean_prompt(active_prompt, has_prompt_api)
@@ -151,4 +161,13 @@ assert(plain_environment_prompt():find("(.venv)", 1, true), "A nested venv takes
 assert(not plain_environment_prompt():find("(analysis)", 1, true), "Show only the active inner environment")
 assert(env_branch_reads() == 1, "Environment changes must not add Git metadata reads on redraw")
 
-print("Passed: presets, Git refresh, exit status, Windows paths, colors, and Python activation/deactivation.")
+local _, _, _, _, filter_input = load_configuration("", true)
+for _, command in ipairs({ "cd ~", "CD ~", "  cd\t~  ", "cd /d ~", "CD /D ~" }) do
+    assert(filter_input(command) == [[cd /d "%USERPROFILE%"]],
+        "The standalone home shortcut must use the quoted user profile and switch drives")
+end
+for _, command in ipairs({ "cd projects", "echo cd ~", "cd ~ & echo done", "cd ~\\Documents", "cd ~~", "" }) do
+    assert(filter_input(command) == command, "Other commands must pass through unchanged: " .. command)
+end
+
+print("Passed: presets, Git, exit status, paths, colors, Python environments, and the cd ~ shortcut.")
