@@ -344,6 +344,25 @@ end
 -- vim.pack intro, build hooks
 -- ============================================================
 local is_windows = vim.fn.has 'win32' == 1
+local function git_root_key(root)
+  root = vim.fs.normalize(vim.uv.fs_realpath(root) or root)
+  return is_windows and root:lower() or root
+end
+local function current_git_root()
+  local root = (vim.b.gitsigns_status_dict or {}).root or vim.b.dotfiles_git_review_root
+  if root then return root end
+  local file = vim.bo.buftype == '' and vim.api.nvim_buf_get_name(0) or ''
+  if file ~= '' and not file:match '^%a[%w+.-]*://' then
+    root = vim.fs.root(file, '.git')
+    if root then return root end
+  end
+  -- The file list has no Gitsigns attachment, including in an empty review.
+  for _, win in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
+    root = vim.b[vim.api.nvim_win_get_buf(win)].dotfiles_git_review_root
+    if root then return root end
+  end
+  return vim.fs.root(vim.fn.getcwd(), '.git')
+end
 local basic_treesitter_parsers = {
   'bash', 'c', 'diff', 'html', 'lua', 'luadoc', 'markdown', 'markdown_inline', 'query', 'vim', 'vimdoc',
   'go', 'gomod', 'gosum', 'gotmpl', 'gowork', 'python', 'jinja', 'jinja_inline',
@@ -1163,37 +1182,27 @@ do
   -- Closing it with q and reopening still requests a fresh review.
   local git_reviews, opening_reviews = {}, {}
   vim.keymap.set('n', '<leader>hh', function()
-    if not is_windows then
-      gitsigns.diff(nil, nil, { diff = 'unified' })
-      return
-    end
-    local file = vim.bo.buftype == '' and vim.api.nvim_buf_get_name(0) or ''
-    local root = (vim.b.gitsigns_status_dict or {}).root or (file ~= '' and vim.fs.root(file, '.git'))
-    if not root then
-      for path, review in pairs(git_reviews) do
-        if review.tab == vim.api.nvim_get_current_tabpage() then root = path; break end
-      end
-    end
-    root = root or vim.fs.root(vim.fn.getcwd(), '.git')
+    local root = current_git_root()
     if not root then
       gitsigns.diff(nil, nil, { diff = 'unified' })
       return
     end
-    root = vim.fs.normalize(vim.uv.fs_realpath(root) or root):lower()
-    local review = git_reviews[root]
-    if review and vim.api.nvim_win_is_valid(review.win) and vim.api.nvim_win_get_buf(review.win) == review.buf then
+    local key = git_root_key(root)
+    local review = git_reviews[key]
+    if is_windows and review and vim.api.nvim_win_is_valid(review.win) and vim.api.nvim_win_get_buf(review.win) == review.buf then
       vim.api.nvim_set_current_win(review.win)
       return
     end
-    if opening_reviews[root] then return end
-    git_reviews[root], opening_reviews[root] = nil, true
+    if opening_reviews[key] then return end
+    git_reviews[key], opening_reviews[key] = nil, true
     gitsigns.diff(nil, nil, { diff = 'unified' }, function(err)
-      opening_reviews[root] = nil
+      opening_reviews[key] = nil
       if err then vim.notify(err, vim.log.levels.ERROR); return end
       for _, win in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
         local buf = vim.api.nvim_win_get_buf(win)
         if vim.api.nvim_buf_get_name(buf):match '^gitsigns%-diff://' then
-          git_reviews[root] = { tab = vim.api.nvim_get_current_tabpage(), win = win, buf = buf }
+          vim.b[buf].dotfiles_git_review_root = root
+          git_reviews[key] = { tab = vim.api.nvim_get_current_tabpage(), win = win, buf = buf }
           break
         end
       end
@@ -1460,10 +1469,10 @@ do
   -- Cache upstream commit counts; never run Git while drawing the bars.
   local branch_counts = {}
   local branch_counts_cache_ms = is_windows and 120000 or 5000
-  local function refresh_branch_counts(buf, force)
+  local function refresh_branch_counts(buf, force, repo_root)
     if not vim.api.nvim_buf_is_valid(buf) then return end
     local status = vim.b[buf].gitsigns_status_dict or {}
-    local root, head = status.root, status.head
+    local root, head = status.root or repo_root, status.head or (repo_root and 'HEAD')
     if not root or not head then
       vim.b[buf].git_ahead_behind = ''
       return
@@ -1494,6 +1503,10 @@ do
         entry.running = false
         entry.time = vim.uv.now()
         local refresh_buf
+        if repo_root and vim.api.nvim_buf_is_valid(buf) and vim.b[buf].dotfiles_git_review_root == repo_root then
+          vim.b[buf].git_ahead_behind = entry.text
+          refresh_buf = buf
+        end
         for _, other in ipairs(vim.api.nvim_list_bufs()) do
           local other_status = vim.b[other].gitsigns_status_dict or {}
           if other_status.root == root and other_status.head == head then
@@ -1502,19 +1515,37 @@ do
           end
         end
         vim.cmd 'redrawstatus!'
-        if entry.refresh and refresh_buf then refresh_branch_counts(refresh_buf, true) end
+        if entry.refresh and refresh_buf then refresh_branch_counts(refresh_buf, true, repo_root) end
       end)
     end
     local ok = pcall(vim.system, { 'git', 'rev-list', '--left-right', '--count', 'HEAD...@{upstream}' }, { cwd = root, text = true, timeout = 5000 }, on_result)
     if not ok then on_result { code = -1 } end
   end
   vim.keymap.set('n', '<leader>hf', function()
-    if not (vim.b.gitsigns_status_dict or {}).root then
-      vim.notify('Open a tracked file in the repository to refresh its commit counts.', vim.log.levels.INFO)
+    local root = current_git_root()
+    if not root then
+      vim.notify('Not in a Git repository.', vim.log.levels.INFO)
       return
     end
-    refresh_branch_counts(vim.api.nvim_get_current_buf(), true)
-  end, { desc = 'git [f]orce ahead/behind refresh' })
+    local key, buf = git_root_key(root), vim.api.nvim_get_current_buf()
+    -- Prefer an attached file so its counts update the repository's statuslines.
+    for _, other in ipairs(vim.api.nvim_list_bufs()) do
+      local status = vim.b[other].gitsigns_status_dict or {}
+      if status.root and status.head and git_root_key(status.root) == key then
+        root, buf = status.root, other
+        break
+      end
+    end
+    refresh_branch_counts(buf, true, root)
+    for _, panel in ipairs(vim.api.nvim_list_bufs()) do
+      local review_root = vim.b[panel].dotfiles_git_review_root
+      local group = 'gitsigns_diff_' .. panel
+      if review_root and git_root_key(review_root) == key and vim.fn.exists('#' .. group .. '#User#GitSignsChanged') == 1 then
+        -- Use the pinned panel's existing refresh hook, preserving focus and folds.
+        vim.api.nvim_exec_autocmds('User', { group = group, pattern = 'GitSignsChanged', data = { file = root:gsub('/$', '') .. '/' } })
+      end
+    end
+  end, { desc = 'git [f]orce review and ahead/behind refresh' })
   local branch_group = vim.api.nvim_create_augroup('GitBranchWinbar', { clear = true })
   vim.api.nvim_create_autocmd('User', {
     group = branch_group,
