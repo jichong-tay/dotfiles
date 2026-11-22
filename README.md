@@ -178,45 +178,47 @@ Copy this repo's `nvim/init.lua` to `%LOCALAPPDATA%\nvim\init.lua`, preserving a
 
 ### Review Git changes in Neovim
 
-Use **Space h h** from a repository directory to open the Git status and diff panel, even before opening a file. **Space h f** also works from either review pane or a repository directory; the other shortcuts below require an open tracked file. Use them in Normal mode:
+Use **Space h h** from a repository directory to open the Git status and diff panel, even before opening a file. **Space h f** refreshes the review from either pane or a repository directory. Use these shortcuts in Normal mode:
 
 | Shortcut | Action |
 | --- | --- |
 | **Space h h** | Open the repository's changed-file list and inline diff panel. |
 | **Space h f** | Force-refresh this repository's open review file lists and ahead/behind commit counts (no fetch). |
-| **Space h g** | Open or resume LazyGit. Press `Ctrl+\` to hide the popup or **q** to quit LazyGit. |
-| **Space h d** | Compare unstaged changes side by side with the index. |
-| **Space h D** | Compare all uncommitted changes in this file with `HEAD` (staged and unstaged). |
-| **Space t i** | Toggle a full-file inline view against `HEAD` (staged and unstaged), with removed lines above their replacements. |
-| **Space t d** | Toggle a whole-file side-by-side view against `HEAD` (staged and unstaged), with unchanged sections expanded. Press again in either pane to close it. |
+| `Ctrl+\` or **Space h g** | Open or resume LazyGit. Press `Ctrl+\` in the popup to hide it or **q** to quit. |
+| **Space h d** | From a tracked file, compare its unstaged changes side by side with the index. |
+| **Space t d** | Switch the repository review between inline and side by side, or open it inline if closed. |
+| **Space t u** | From a Git review pane, switch between all changes and unstaged changes only. |
 | **Space h p** | Preview just the change under the cursor in a popup. |
-| **Space h i** | Preview just the change under the cursor inline. |
 | **go** | From the working-file pane, open an editing tab at the same line and column with the inline diff enabled. |
 | **]c** / **[c** | Move to the next / previous change. |
 
-Side-by-side diffs show the base on the left and your current file on the right. Similar lines are aligned, with changed blocks tinted. **Space h d / Space h D** compare the whole file but fold longer unchanged sections; press `zo` to expand a fold. **Space t d** opens the whole file without those folds and restores your folding preference when closed. It also replaces an active inline view. To return to inline, press **Space t d** to close its split, then **Space t i**. For a split opened with **Space h d / Space h D**, move to the left pane with **Ctrl+w h** and run `:close` first. Press **Space t i** again to close the inline view.
+Side-by-side diffs show the base on the left and your current file on the right. Press `zo` to expand an unchanged section, or use **Space h + / Space h -** to adjust the amount of context. For a single-file split opened with **Space h d**, close the index pane with `:close` when done.
 
-Changed lines use muted red for the old version and muted green for the new version, with darker red/green backgrounds over the changed words. Syntax colors remain and words are not made bold. In native side-by-side comparisons (**Space h d**, **Space h D**, **Space t d**, and **gu**), both shades stay red in the old pane and green in the current pane, including when the word-diff overlay is enabled. Temporary pane colors are removed when the comparison closes. This changes styling only; line matching and navigation stay the same.
+Changed lines use muted red for the old version and muted green for the new version, with darker red and green backgrounds over the changed words. In side-by-side comparisons, both shades stay red in the old pane and green in the current pane, including when the word-diff overlay is enabled. Syntax colors remain visible and temporary pane colors are removed when the comparison closes.
 
-Inline reviews (**Space h h**, **Space t i**, and **go**) use the configured diff matching, as side-by-side comparisons do. Isolated one- and two-line matched replacements appear as individual red old/new green pairs. Nearby replacements, additions, and deletions separated by **up to three unchanged lines** can form a chain; when the chain contains **three or more changed lines** and changes on both sides, its old content appears together above its new content. This also joins mixed pieces such as `1 old/1 new`, a deletion, and another replacement into one old section followed by one new section. Unchanged context is included in both versions with neutral text backgrounds; only actual edits receive red/green backgrounds and darker word highlights. Consecutive multi-line replacements and addition-only/deletion-only changes stay grouped. Gitsigns' built-in **]c** and **[c** follow these displayed pairs, blocks, or chains, including staged and unstaged changes against `HEAD`, and respect counts such as **2]c** and `wrapscan`. Normal editing keeps its usual unstaged-change navigation. Staging/reset actions retain Gitsigns' normal hunk selection rather than using the displayed chain; adjacent pieces can already belong to one normal Git hunk. **Space h i** remains the single-hunk inline preview. This display rule adds no Git commands or extra line-matching passes.
+The inline review uses the same configured diff matching as the side-by-side layout. Isolated one- and two-line matched replacements appear as individual red old/new green pairs. Nearby replacements, additions, and deletions separated by **up to three unchanged lines** can form a chain. When the chain contains **three or more changed lines** and changes on both sides, its old content appears together above its new content. This also joins mixed pieces such as `1 old/1 new`, a deletion, and another replacement into one old section followed by one new section. Unchanged context is included in both versions with neutral text backgrounds. Consecutive multi-line replacements and addition-only/deletion-only changes stay grouped. **]c** and **[c** follow these displayed pairs, blocks, or chains and respect counts such as **2]c** and `wrapscan`. Normal editing keeps its usual unstaged-change navigation. Staging and resetting use Gitsigns' underlying hunks. This display rule adds no Git commands or extra line-matching passes.
 
 When the Git revision uses LF and the Windows working file uses CRLF, inline review compares the visible buffer text so line-ending differences do not color the entire file. This also handles the reverse format difference. File bytes, line-ending settings, and Git's staging comparison stay unchanged.
 
-The **Space h h** review opens with two panes: the file list and an inline diff against `HEAD` showing staged and unstaged changes. Use **Ctrl+h / Ctrl+l** to move left/right, or **Ctrl+w**, then **w**, to cycle panes. For separate Neovim tabs, use **gt / gT** for next/previous. In the file list, **Enter** opens a file, **s / u** stage/unstage it, **gu** switches between inline and side-by-side layouts, **g?** shows help, and **q** closes the review. **]f / [f** move between changed files from the list or file panes.
+The **Space h h** review opens inline against `HEAD`, showing staged and unstaged changes. Press **Space t d** from any review pane to switch layouts while keeping the current file and comparison scope. From elsewhere in the repository, **Space t d** brings its review forward and switches layouts, or opens it inline on the first press if no review exists.
+
+Use **Ctrl+h / Ctrl+l** to move between panes, or **Ctrl+w**, then **w**, to cycle through them. In the file list, **Enter** opens a file, **s / u** stage or unstage it, **gu** switches layouts, **g?** shows help, and **q** closes the review. **]f / [f** move between changed files. **gt / gT** move between Neovim tabs.
+
+Press **Space t u** from any review pane to show only unstaged changes. The file list includes untracked files and skips fully staged files. For a partially staged file, the diff compares the working file with the version in the index. Press **Space t u** again to compare all changes against `HEAD`. The toggle keeps the current layout.
 
 Press **Space h f** to refresh without leaving the file list. If the review is still opening, it refreshes as soon as the initial view is ready. **Space** starts a leader shortcut in the list.
 
-**Space h g** or **`:LazyGit`** uses your existing `lazygit` executable on `PATH` and reopens the running session for that repository. Press `Ctrl+\` to hide the popup and keep your place, or **e** on a changed file to hide the popup and edit the file in the same Neovim session. Press **q** to end the session when you're done. If auto-refresh is disabled, press **R** inside LazyGit to reload its Git state. [LazyGit keybindings](https://github.com/jesseduffield/lazygit/blob/master/docs/keybindings/Keybindings_en.md)
+In Normal mode, press `Ctrl+\` to open or resume LazyGit for the repository. **Space h g** and `:LazyGit` also open it. In the popup, `Ctrl+\` hides it and keeps your place. Press **e** on a changed file to edit it in the same Neovim session and hide the popup. Press **q** to end the session. If auto-refresh is disabled, press **R** in LazyGit to reload its Git state. [LazyGit keybindings](https://github.com/jesseduffield/lazygit/blob/master/docs/keybindings/Keybindings_en.md)
 
 To enable **e** when you launch `lazygit` from a regular shell, run **`:LazyGitSetupStandalone`** once in Neovim with both executables on `PATH`. It sets `os.editPreset: nvim` in LazyGit's own config. If the command reports custom editor settings, set the preset in the indicated file and remove the custom settings that override it.
 
-Deleted lines wrap inside the inline views (**Space h h**, **Space t i**, **go**, and **Space h i**) when `wrap` is enabled. With `linebreak` enabled, wrapping prefers spaces; a word wider than the pane still splits. Highlights are preserved, the original line number appears only on the first row, and resizing reflows the preview. This custom adapter in `init.lua` works with Neovim 0.12 and the pinned Gitsigns version; it does not alter the file or the plugin checkout. Use `:setlocal nowrap` to restore horizontal scrolling.
+Deleted lines wrap in the inline review and the **go** editing view when `wrap` is enabled. With `linebreak` enabled, wrapping prefers spaces. A word wider than the pane still splits. Highlights are preserved, the original line number appears only on the first row, and resizing reflows the preview. This adapter lives in `init.lua` and works with the pinned Gitsigns version. Use `:setlocal nowrap` to restore horizontal scrolling.
 
-To edit at the line you are reviewing, put the cursor on that line in the working-file pane and press **go**. The new tab starts with the inline diff against `HEAD` enabled (staged and unstaged changes); press **Space t i** if you want to hide it. The Git review stays open in its original tab; use **gT** to return or `:tabclose` to close the new editing tab. In the file list, **o** opens the selected file in a new tab; **go** is for preserving your cursor position in the file pane.
+To edit at the line you are reviewing, put the cursor on that line in the working-file pane and press **go**. The new tab starts with an inline diff against `HEAD`. Run `:Gitsigns diffthis HEAD unified=true` there to hide the diff, or use **gT** to return to the review. From the file list, **o** opens the selected file in a regular editing tab.
 
 #### Troubleshoot side-by-side colors and alignment
 
-In an affected **Space h d** or **Space h D** code pane:
+In an affected side-by-side code pane, whether opened from the review or with **Space h d**, try these checks.
 
 1. If red and green highlights overlap within one line, put the cursor on an affected word and run this read-only check:
 
@@ -265,7 +267,7 @@ Use **`:messages`** to read or copy the output if it is cut off. It contains the
 | --- | --- |
 | `renderer=...init.lua:...` | The custom inline display adapter is loaded. |
 | `renderer=...gitsigns/hunk_preview.lua:...` | Gitsigns' original renderer is active. Check which config this Neovim instance loads with `:echo $MYVIMRC`. On Windows, copy the latest repo `nvim/init.lua` to `%LOCALAPPDATA%\nvim\init.lua`, then completely restart Neovim. |
-| `unified=false` | The current pane is not a Gitsigns inline code view. Move out of the file list or switch back from side-by-side view with **gu** in the file list, then rerun the command. |
+| `unified=false` | Move into the inline code pane and rerun the command. Use **Space t d** to switch the review to inline first if needed. |
 | `formats=unix/dos` | The Git revision uses LF and the working file uses CRLF. The adapter compares visible text to prevent a false whole-file replacement. `dos/unix` is handled the same way. |
 | `change:1/1` | A single-line replacement, or one pair from a two-line matched replacement. |
 | `change:80/80` | A grouped replacement or nearby-edit chain spanning 80 old and 80 new lines. Chain counts include neutral context. |
