@@ -213,8 +213,15 @@ end
 local function reveal_externally(path)
   local cmd
   if vim.fn.has 'win32' == 1 then
-    -- Explorer takes "/select," and the path as separate arguments.
-    cmd = { 'explorer.exe', '/select,', (path:gsub('/', '\\')) }
+    -- Explorer expects /select,"path" with the quotes around the path only.
+    local handle, err = vim.uv.spawn('explorer.exe', {
+      args = { '/select,"' .. path:gsub('/', '\\') .. '"' },
+      verbatim = true,
+      detached = true,
+    })
+    if handle then handle:close()
+    else vim.notify(tostring(err), vim.log.levels.ERROR) end
+    return
   elseif vim.fn.has 'mac' == 1 then
     cmd = { 'open', '-R', path }
   else
