@@ -188,6 +188,7 @@ Use **Space h h** from a repository directory to open the Git status and diff pa
 | **Space h d** | From a tracked file, compare its unstaged changes side by side with the index. |
 | **Space t d** | Open the current file's diff inline or switch between inline and side by side. Also switches the layout inside the Git review. |
 | **Space t u** | Switch between all changes and unstaged changes only for the current file or the Git review. |
+| **Space t r** | Close the active inline diff, Git diff split, or repository review. |
 | **Space h p** | Preview just the change under the cursor in a popup. |
 | **Space h i** | Preview just the change under the cursor inline. |
 | **go** | From the working-file pane, open an editing tab at the same line and column with the inline diff enabled. |

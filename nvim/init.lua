@@ -1329,6 +1329,9 @@ do
     end
   end
   local file_diffs = {}
+  local function file_diff_in_window(win)
+    return file_diffs[win] or vim.iter(vim.tbl_values(file_diffs)):find(function(diff) return diff.left_win == win end)
+  end
   local function current_file_diff(state)
     local win = state.right_win
     if not state.base or not vim.api.nvim_win_is_valid(win) or vim.api.nvim_win_get_buf(win) ~= state.buf then return false end
@@ -1339,6 +1342,8 @@ do
   local function close_file_diff(state)
     local win, base = state.right_win, state.base
     file_diffs[win] = nil
+    local view = vim.api.nvim_win_is_valid(win) and unified.get_view(win)
+    if view and view.base == base then unified.close(win) end
     local left = state.left_win
     if left and vim.api.nvim_win_is_valid(left) and vim.api.nvim_win_get_buf(left) == base then vim.api.nvim_win_close(left, true) end
     if left and vim.api.nvim_win_is_valid(win) and vim.api.nvim_win_get_buf(win) == state.buf then
@@ -1395,7 +1400,7 @@ do
   local function toggle_file_diff(scope)
     if not show_diff_buffers then return false end
     local win, buf = vim.api.nvim_get_current_win(), vim.api.nvim_get_current_buf()
-    local state = file_diffs[win] or vim.iter(vim.tbl_values(file_diffs)):find(function(diff) return diff.left_win == win end)
+    local state = file_diff_in_window(win)
     if state and not state.running and not current_file_diff(state) then
       close_file_diff(state)
       state = nil
@@ -1429,7 +1434,7 @@ do
         local text = read_file_base(entry, request.unstaged)
         local source = state.right_win
         local focus = vim.api.nvim_get_current_win()
-        if not vim.api.nvim_win_is_valid(source) or vim.api.nvim_win_get_buf(source) ~= state.buf
+        if file_diffs[source] ~= state or not vim.api.nvim_win_is_valid(source) or vim.api.nvim_win_get_buf(source) ~= state.buf
           or (focus ~= source and focus ~= state.left_win) then return end
         if not state.base then
           state.base = vim.api.nvim_create_buf(false, true)
@@ -1548,6 +1553,36 @@ do
       open_git_review(root)
     end
   end, { desc = 'Toggle [d]iff layout' })
+  vim.keymap.set('n', '<leader>tr', function()
+    local panel = review_in_current_tab()
+    if panel then
+      vim.api.nvim_set_current_win(panel.panel_win)
+      vim.fn.maparg('q', 'n', false, true).callback()
+      return
+    end
+    local win = vim.api.nvim_get_current_win()
+    local state = file_diff_in_window(win)
+    if state then
+      close_file_diff(state)
+    elseif unified.get_view(win) then
+      unified.close(win)
+    elseif vim.wo[win].diff then
+      -- The quick Gitsigns split uses the source buffer's named index buffer.
+      local windows = vim.tbl_filter(function(w) return vim.wo[w].diff end, vim.api.nvim_tabpage_list_wins(0))
+      if #windows == 2 then
+        for i, source in ipairs(windows) do
+          local base = windows[3 - i]
+          local buf = vim.api.nvim_win_get_buf(source)
+          local entry = git_cache[buf]
+          if vim.bo[buf].buftype == '' and entry
+            and vim.api.nvim_buf_get_name(vim.api.nvim_win_get_buf(base)) == entry:get_rev_bufname() then
+            vim.api.nvim_win_close(base, false)
+            return
+          end
+        end
+      end
+    end
+  end, { desc = '[R]eset diff view' })
   vim.keymap.set('n', 'go', function()
     if vim.bo.buftype ~= '' or vim.api.nvim_buf_get_name(0) == '' then
       vim.notify('Move to the working file pane before opening it in a new tab.', vim.log.levels.INFO)
@@ -1641,7 +1676,7 @@ do
   vim.pack.add { gh 'folke/which-key.nvim' }
   local leader_order = { h = 1, t = 2, s = 3, ['<Space>'] = 4, ['/'] = 5, q = 6, f = 7 }
   local git_order = { h = 1, f = 2 }
-  local toggle_order = { d = 1, u = 2, t = 3, b = 4, m = 5, w = 6, h = 7 }
+  local toggle_order = { d = 1, u = 2, r = 3, t = 4, b = 5, m = 6, w = 7, h = 8 }
   local terminal_order = { t = 1, s = 2, n = 3 }
   local leader_prefix = vim.fn.keytrans(vim.g.mapleader)
   require('which-key').setup {
