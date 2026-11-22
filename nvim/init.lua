@@ -1796,9 +1796,34 @@ end
 
 -- ============================================================
 -- SECTION 5: SEARCH & NAVIGATION
--- Telescope setup, keymaps, LSP picker mappings
+-- File explorer, LazyGit, Telescope, and LSP picker mappings
 -- ============================================================
 do
+  vim.pack.add { gh 'stevearc/oil.nvim', gh 'kdheepak/lazygit.nvim' }
+  local oil = require 'oil'
+  local oil_keys = {
+    q = { 'actions.close', mode = 'n' },
+    ['<C-h>'] = false,
+    ['<C-l>'] = false,
+  }
+  -- Oil's Windows Recycle Bin adapter needs PowerShell.
+  if is_windows then oil_keys['g\\'] = false end
+  oil.setup {
+    columns = vim.g.have_nerd_font and { 'icon' } or {},
+    delete_to_trash = not is_windows,
+    keymaps = oil_keys,
+  }
+  vim.keymap.set('n', '<leader>e', oil.open, { desc = 'Open file [E]xplorer' })
+  vim.keymap.set('n', '<leader>hg', function()
+    local dir = oil.get_current_dir()
+    local root = (dir and vim.fs.root(dir, '.git')) or current_git_root()
+    if not root then
+      vim.notify('Not in a Git repository.', vim.log.levels.INFO)
+      return
+    end
+    require('lazygit').lazygit(root)
+  end, { desc = 'Open Lazy[G]it' })
+
   -- [[ Fuzzy Finder (files, lsp, etc) ]]
   --
   -- Telescope is a fuzzy finder that comes with a lot of different things that
