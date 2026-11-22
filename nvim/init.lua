@@ -84,6 +84,33 @@ I hope you enjoy your Neovim journey,
 P.S. You can delete this when you're done too. It's your config now! :)
 --]]
 
+-- LazyGit runs this same file with `nvim -l` to hand a file back to the parent.
+if arg and arg[1] == '--dotfiles-lazygit-edit' then
+  local server = assert(vim.env.NVIM, 'LazyGit needs to run inside Neovim')
+  local buf = assert(tonumber(vim.env.DOTFILES_LAZYGIT_BUFFER), 'No LazyGit terminal to return from')
+  local path = vim.fn.fnamemodify(assert(arg[2], 'No file to open'), ':p')
+  local line = tonumber(arg[3]) or 0
+  local channel = vim.fn.sockconnect('pipe', server, { rpc = true })
+  assert(channel > 0, 'Could not reach the Neovim session')
+  vim.rpcrequest(channel, 'nvim_exec_lua', [[
+    local buf, path, line = ...
+    assert(vim.api.nvim_buf_is_valid(buf) and vim.b[buf].dotfiles_lazygit_root, 'No LazyGit terminal is open')
+    local win = vim.b[buf].dotfiles_lazygit_window
+    if win and vim.api.nvim_win_is_valid(win) then
+      if vim.api.nvim_get_current_win() == win then vim.cmd.stopinsert() end
+      vim.api.nvim_win_hide(win)
+    end
+    local editor = vim.b[buf].dotfiles_lazygit_editor
+    if editor and vim.api.nvim_win_is_valid(editor) then vim.api.nvim_set_current_win(editor) end
+    vim.cmd.drop(vim.fn.fnameescape(path))
+    if line > 0 then
+      vim.api.nvim_win_set_cursor(0, { math.min(line, vim.api.nvim_buf_line_count(0)), 0 })
+    end
+  ]], { buf, path, line })
+  vim.fn.chanclose(channel)
+  return
+end
+
 -- ============================================================
 -- SECTION 1: OPTIONS
 -- Core Neovim settings, leaders, options
@@ -1181,6 +1208,24 @@ do
   -- Reuse each Windows repository review instead of rereading Git on every hh.
   -- Closing it with q and reopening still requests a fresh review.
   local git_reviews, opening_reviews = {}, {}
+  local force_git_refresh
+  local function refresh_git_review(panel, root)
+    local group = 'gitsigns_diff_' .. panel
+    if vim.fn.exists('#' .. group .. '#User#GitSignsChanged') == 1 then
+      -- Use Gitsigns' refresh hook to preserve focus, selection, and folds.
+      vim.api.nvim_exec_autocmds('User', { group = group, pattern = 'GitSignsChanged', data = { file = root:gsub('/$', '') .. '/' } })
+    end
+  end
+  vim.api.nvim_create_autocmd('FileType', {
+    group = vim.api.nvim_create_augroup('DotfilesGitReviewKeys', { clear = true }),
+    pattern = 'gitsigns-diff',
+    callback = function(ev)
+      -- The panel installs its keys after FileType, before it loads the first diff.
+      vim.schedule(function()
+        if vim.api.nvim_buf_is_valid(ev.buf) then pcall(vim.keymap.del, 'n', '<Space>', { buffer = ev.buf }) end
+      end)
+    end,
+  })
   vim.keymap.set('n', '<leader>hh', function()
     local root = current_git_root()
     if not root then
@@ -1194,17 +1239,20 @@ do
       return
     end
     if opening_reviews[key] then return end
-    git_reviews[key], opening_reviews[key] = nil, true
+    local opening = { refresh = false }
+    git_reviews[key], opening_reviews[key] = nil, opening
     gitsigns.diff(nil, nil, { diff = 'unified' }, function(err)
       opening_reviews[key] = nil
       if err then vim.notify(err, vim.log.levels.ERROR); return end
       for _, win in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
         local buf = vim.api.nvim_win_get_buf(win)
         if vim.api.nvim_buf_get_name(buf):match '^gitsigns%-diff://' then
-          -- Leave Space available as the leader in the file list. Use s/u to stage or unstage.
-          pcall(vim.keymap.del, 'n', '<Space>', { buffer = buf })
           vim.b[buf].dotfiles_git_review_root = root
           git_reviews[key] = { tab = vim.api.nvim_get_current_tabpage(), win = win, buf = buf }
+          if opening.refresh or vim.b[buf].dotfiles_git_review_refresh then
+            vim.b[buf].dotfiles_git_review_refresh = nil
+            force_git_refresh(root, buf)
+          end
           break
         end
       end
@@ -1523,13 +1571,8 @@ do
     local ok = pcall(vim.system, { 'git', 'rev-list', '--left-right', '--count', 'HEAD...@{upstream}' }, { cwd = root, text = true, timeout = 5000 }, on_result)
     if not ok then on_result { code = -1 } end
   end
-  vim.keymap.set('n', '<leader>hf', function()
-    local root = current_git_root()
-    if not root then
-      vim.notify('Not in a Git repository.', vim.log.levels.INFO)
-      return
-    end
-    local key, buf = git_root_key(root), vim.api.nvim_get_current_buf()
+  force_git_refresh = function(root, buf)
+    local key = git_root_key(root)
     -- Prefer an attached file so its counts update the repository's statuslines.
     for _, other in ipairs(vim.api.nvim_list_bufs()) do
       local status = vim.b[other].gitsigns_status_dict or {}
@@ -1541,12 +1584,31 @@ do
     refresh_branch_counts(buf, true, root)
     for _, panel in ipairs(vim.api.nvim_list_bufs()) do
       local review_root = vim.b[panel].dotfiles_git_review_root
-      local group = 'gitsigns_diff_' .. panel
-      if review_root and git_root_key(review_root) == key and vim.fn.exists('#' .. group .. '#User#GitSignsChanged') == 1 then
-        -- Use the pinned panel's existing refresh hook, preserving focus and folds.
-        vim.api.nvim_exec_autocmds('User', { group = group, pattern = 'GitSignsChanged', data = { file = root:gsub('/$', '') .. '/' } })
+      if review_root and git_root_key(review_root) == key then refresh_git_review(panel, root) end
+    end
+  end
+  vim.keymap.set('n', '<leader>hf', function()
+    -- The list can be visible before it has a repository assigned to it.
+    if next(opening_reviews) then
+      for _, win in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
+        local panel = vim.api.nvim_win_get_buf(win)
+        if vim.bo[panel].filetype == 'gitsigns-diff' and not vim.b[panel].dotfiles_git_review_root then
+          vim.b[panel].dotfiles_git_review_refresh = true
+          return
+        end
       end
     end
+    local root = current_git_root()
+    if not root then
+      vim.notify('Not in a Git repository.', vim.log.levels.INFO)
+      return
+    end
+    local opening = opening_reviews[git_root_key(root)]
+    if opening then
+      opening.refresh = true
+      return
+    end
+    force_git_refresh(root, vim.api.nvim_get_current_buf())
   end, { desc = 'git [f]orce review and ahead/behind refresh' })
   local branch_group = vim.api.nvim_create_augroup('GitBranchWinbar', { clear = true })
   vim.api.nvim_create_autocmd('User', {
@@ -1799,7 +1861,8 @@ end
 -- File explorer, LazyGit, Telescope, and LSP picker mappings
 -- ============================================================
 do
-  vim.pack.add { gh 'stevearc/oil.nvim', gh 'kdheepak/lazygit.nvim' }
+  vim.pack.add { gh 'stevearc/oil.nvim' }
+  vim.pack.add({ gh 'kdheepak/lazygit.nvim' }, { load = true })
   local oil = require 'oil'
   local oil_keys = {
     q = { 'actions.close', mode = 'n' },
@@ -1813,16 +1876,209 @@ do
     delete_to_trash = not is_windows,
     keymaps = oil_keys,
   }
+  -- Oil takes over from netrw. Keep :Ex as shorthand for :Explore.
+  vim.api.nvim_create_user_command('Explore', function(ctx) oil.open(ctx.fargs[1]) end, {
+    desc = 'Browse files with Oil',
+    nargs = '?',
+    complete = 'dir',
+  })
   vim.keymap.set('n', '<leader>e', oil.open, { desc = 'Open file [E]xplorer' })
-  vim.keymap.set('n', '<leader>hg', function()
+
+  local function lazygit_user_configs(existing_only)
+    local files = vim.split(vim.env.LG_CONFIG_FILE or '', ',', { plain = true, trimempty = true })
+    if #files > 0 then return files end
+    local result = vim.system({ 'lazygit', '-cd' }, { text = true, timeout = 5000 }):wait()
+    local dir = vim.trim(result.stdout or '')
+    if result.code ~= 0 or dir == '' then return {} end
+    local path = vim.fs.joinpath(dir, 'config.yml')
+    return (not existing_only or vim.fn.filereadable(path) == 1) and { path } or {}
+  end
+
+  -- Edit ordinary YAML mappings in place. Leave custom editor commands and complex YAML for manual editing.
+  local function set_lazygit_nvim_preset(lines)
+    local os_row, preset_row, preset_comment, indent
+    local in_os = false
+    local has_root_key = false
+    for row, line in ipairs(lines) do
+      if not line:match '^%s*$' and not line:match '^%s*#' then
+        if line:match '^%S' then
+          local key, value = line:match '^([%w_-]+)%s*:%s*(.*)$'
+          if not key then return false end
+          has_root_key = true
+          in_os = key == 'os'
+          if in_os then
+            if os_row or (value ~= '' and not value:match '^#') then return false end
+            os_row = row
+          end
+        elseif in_os then
+          local spaces, key, value = line:match '^( +)([%w_-]+)%s*:%s*(.*)$'
+          if not spaces or (indent and spaces ~= indent) then return false end
+          indent = spaces
+          local comment = value:match '%s+#.*$' or (value:match '^#.*$' and (' ' .. value)) or ''
+          local scalar = vim.trim((value:gsub('%s+#.*$', ''):gsub('^#.*$', '')))
+          if key == 'editPreset' then
+            local name = scalar:match [[^(['"])([%w_-]*)%1$]] or scalar:match '^[%w_-]*$'
+            if preset_row or not name then return false end
+            preset_row, preset_comment = row, comment
+          elseif key == 'edit' or key == 'editAtLine' or key == 'openDirInEditor' then
+            if scalar ~= '' and scalar ~= '""' and scalar ~= "''" then return false end
+          elseif key == 'editInTerminal' and scalar ~= 'true' then
+            return false
+          end
+        elseif not has_root_key then
+          return false
+        end
+      end
+    end
+    local preset = (indent or '  ') .. 'editPreset: nvim'
+    if preset_row then
+      lines[preset_row] = preset .. preset_comment
+    elseif os_row then
+      table.insert(lines, os_row + 1, preset)
+    else
+      vim.list_extend(lines, { 'os:', preset })
+    end
+    return true
+  end
+
+  -- Standalone LazyGit reads its own config, so provision it only on explicit request.
+  vim.api.nvim_create_user_command('LazyGitSetupStandalone', function()
+    if vim.fn.executable 'lazygit' ~= 1 or vim.fn.executable 'nvim' ~= 1 then
+      vim.notify('Add lazygit and nvim to PATH first.', vim.log.levels.ERROR)
+      return
+    end
+    local files = lazygit_user_configs()
+    if #files ~= 1 then
+      vim.notify('Set os.editPreset to nvim in your LazyGit config.', vim.log.levels.WARN)
+      return
+    end
+    local path = files[1]
+    local original = vim.uv.fs_lstat(path) and vim.fn.readfile(path) or {}
+    local lines = vim.deepcopy(original)
+    if not set_lazygit_nvim_preset(lines) then
+      vim.notify('Set os.editPreset to nvim in ' .. path .. ' and check for custom editor settings.', vim.log.levels.WARN)
+      return
+    end
+    if not vim.deep_equal(lines, original) then
+      vim.fn.mkdir(vim.fs.dirname(vim.fn.fnamemodify(path, ':p')), 'p')
+      assert(vim.fn.writefile(lines, path) == 0, 'Could not write ' .. path)
+    end
+    vim.notify('Standalone LazyGit is set to open Neovim via ' .. path)
+  end, { desc = 'Set Neovim as the editor for standalone LazyGit' })
+
+  -- Layer the editor commands over the user's LazyGit config for this launch.
+  local lazygit_editor_config
+  local function lazygit_config_files()
+    if not lazygit_editor_config then
+      local function quote(path)
+        return is_windows and ('"' .. path .. '"') or vim.fn.shellescape(path)
+      end
+      local init = vim.fs.joinpath(vim.fn.stdpath 'config', 'init.lua')
+      local edit = quote(vim.v.progpath) .. ' -l ' .. quote(init) .. ' --dotfiles-lazygit-edit'
+      lazygit_editor_config = vim.fn.tempname() .. '.yml'
+      vim.fn.writefile({
+        'os:',
+        '  edit: ' .. vim.json.encode(edit .. ' {{filename}}'),
+        '  editAtLine: ' .. vim.json.encode(edit .. ' {{filename}} {{line}}'),
+        '  openDirInEditor: ' .. vim.json.encode(edit .. ' {{dir}}'),
+        '  editInTerminal: false',
+      }, lazygit_editor_config)
+    end
+    local files = lazygit_user_configs(true)
+    files[#files + 1] = lazygit_editor_config
+    return files
+  end
+
+  local lazygit_buffers = {}
+  local lazygit_window
+  local function lazygit_float()
+    local lines = vim.o.lines - vim.o.cmdheight
+    local width, height = math.max(1, math.floor(vim.o.columns * 0.9)), math.max(1, math.floor(lines * 0.85))
+    return {
+      relative = 'editor',
+      width = width,
+      height = height,
+      row = math.max(0, math.floor((lines - height - 2) / 2)),
+      col = math.max(0, math.floor((vim.o.columns - width - 2) / 2)),
+      border = 'rounded',
+      style = 'minimal',
+    }
+  end
+  local function hide_lazygit(win)
+    if not win or not vim.api.nvim_win_is_valid(win) then return end
+    if vim.api.nvim_get_current_win() == win then vim.cmd.stopinsert() end
+    vim.api.nvim_win_hide(win)
+  end
+  vim.api.nvim_create_autocmd('VimResized', {
+    group = vim.api.nvim_create_augroup('DotfilesLazyGitFloat', { clear = true }),
+    callback = function()
+      if lazygit_window and vim.api.nvim_win_is_valid(lazygit_window) then
+        vim.api.nvim_win_set_config(lazygit_window, lazygit_float())
+      end
+    end,
+  })
+  local function open_lazygit()
+    if lazygit_window == vim.api.nvim_get_current_win() then
+      hide_lazygit(lazygit_window)
+      return
+    end
     local dir = oil.get_current_dir()
     local root = (dir and vim.fs.root(dir, '.git')) or current_git_root()
     if not root then
       vim.notify('Not in a Git repository.', vim.log.levels.INFO)
       return
     end
-    require('lazygit').lazygit(root)
-  end, { desc = 'Open Lazy[G]it' })
+    local key = git_root_key(root)
+    local buf = lazygit_buffers[key]
+    local start_job = not buf or not vim.api.nvim_buf_is_valid(buf)
+    local command
+    if start_job then
+      if vim.fn.executable 'lazygit' ~= 1 then
+        vim.notify('LazyGit is not on PATH.', vim.log.levels.WARN)
+        return
+      end
+      command = { 'lazygit', '-ucf', table.concat(lazygit_config_files(), ',') }
+      buf = vim.api.nvim_create_buf(false, true)
+      vim.bo[buf].bufhidden = 'hide'
+      vim.b[buf].dotfiles_lazygit_root = root
+      vim.keymap.set({ 'n', 't' }, [[<C-\>]], function() hide_lazygit(vim.b[buf].dotfiles_lazygit_window) end, { buf = buf, desc = 'Hide LazyGit' })
+    end
+    hide_lazygit(lazygit_window)
+    vim.b[buf].dotfiles_lazygit_editor = vim.api.nvim_get_current_win()
+    local win = vim.api.nvim_open_win(buf, true, lazygit_float())
+    lazygit_window = win
+    vim.b[buf].dotfiles_lazygit_window = win
+    vim.wo[win].winhl = 'NormalFloat:Normal,FloatBorder:Normal'
+    if start_job then
+      local ok, job = pcall(vim.fn.jobstart, command, {
+        cwd = root,
+        term = true,
+        env = { DOTFILES_LAZYGIT_BUFFER = tostring(buf) },
+        on_exit = vim.schedule_wrap(function(_, code)
+          if lazygit_buffers[key] == buf then lazygit_buffers[key] = nil end
+          if vim.api.nvim_buf_is_valid(buf) then vim.api.nvim_buf_delete(buf, { force = true }) end
+          if code == 0 then
+            vim.cmd 'silent! checktime'
+            if vim.g.lazygit_on_exit_callback then vim.g.lazygit_on_exit_callback() end
+          else
+            vim.notify(('LazyGit exited with code %d.'):format(code), vim.log.levels.WARN)
+          end
+        end),
+      })
+      if not ok or job <= 0 then
+        hide_lazygit(win)
+        vim.api.nvim_buf_delete(buf, { force = true })
+        vim.notify('Could not start LazyGit.', vim.log.levels.ERROR)
+        return
+      end
+      vim.bo[buf].filetype = 'lazygit'
+      lazygit_buffers[key] = buf
+    end
+    vim.cmd.startinsert()
+  end
+  vim.api.nvim_create_user_command('LazyGit', open_lazygit, { desc = 'Open LazyGit for this repository' })
+  vim.api.nvim_create_user_command('LazyGitCurrentFile', open_lazygit, { desc = 'Open LazyGit for the current file' })
+  vim.keymap.set('n', '<leader>hg', '<cmd>LazyGit<CR>', { desc = 'Toggle Lazy[G]it' })
 
   -- [[ Fuzzy Finder (files, lsp, etc) ]]
   --

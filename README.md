@@ -184,7 +184,7 @@ Use **Space h h** from a repository directory to open the Git status and diff pa
 | --- | --- |
 | **Space h h** | Open the repository's changed-file list and inline diff panel. |
 | **Space h f** | Force-refresh this repository's open review file lists and ahead/behind commit counts (no fetch). |
-| **Space h g** | Open LazyGit in a floating window. Press **q** there to return to Neovim. |
+| **Space h g** | Open or resume LazyGit. Press `Ctrl+\` to hide the popup or **q** to quit LazyGit. |
 | **Space h d** | Compare unstaged changes side by side with the index. |
 | **Space h D** | Compare all uncommitted changes in this file with `HEAD` (staged and unstaged). |
 | **Space t i** | Toggle a full-file inline view against `HEAD` (staged and unstaged), with removed lines above their replacements. |
@@ -204,9 +204,11 @@ When the Git revision uses LF and the Windows working file uses CRLF, inline rev
 
 The **Space h h** review opens with two panes: the file list and an inline diff against `HEAD` showing staged and unstaged changes. Use **Ctrl+h / Ctrl+l** to move left/right, or **Ctrl+w**, then **w**, to cycle panes. For separate Neovim tabs, use **gt / gT** for next/previous. In the file list, **Enter** opens a file, **s / u** stage/unstage it, **gu** switches between inline and side-by-side layouts, **g?** shows help, and **q** closes the review. **]f / [f** move between changed files from the list or file panes.
 
-Press **Space h f** to refresh without leaving the file list. **Space** starts a leader shortcut in the list.
+Press **Space h f** to refresh without leaving the file list. If the review is still opening, it refreshes as soon as the initial view is ready. **Space** starts a leader shortcut in the list.
 
-The [LazyGit plugin](https://github.com/kdheepak/lazygit.nvim) uses your existing `lazygit` executable on `PATH`. If Neovim cannot find it, check with `:!lazygit --version`.
+**Space h g** or **`:LazyGit`** uses your existing `lazygit` executable on `PATH` and reopens the running session for that repository. Press `Ctrl+\` to hide the popup and keep your place, or **e** on a changed file to hide the popup and edit the file in the same Neovim session. Press **q** to end the session when you're done. If auto-refresh is disabled, press **R** inside LazyGit to reload its Git state. [LazyGit keybindings](https://github.com/jesseduffield/lazygit/blob/master/docs/keybindings/Keybindings_en.md)
+
+To enable **e** when you launch `lazygit` from a regular shell, run **`:LazyGitSetupStandalone`** once in Neovim with both executables on `PATH`. It sets `os.editPreset: nvim` in LazyGit's own config. If the command reports custom editor settings, set the preset in the indicated file and remove the custom settings that override it.
 
 Deleted lines wrap inside the inline views (**Space h h**, **Space t i**, **go**, and **Space h i**) when `wrap` is enabled. With `linebreak` enabled, wrapping prefers spaces; a word wider than the pane still splits. Highlights are preserved, the original line number appears only on the first row, and resizing reflows the preview. This custom adapter in `init.lua` works with Neovim 0.12 and the pinned Gitsigns version; it does not alter the file or the plugin checkout. Use `:setlocal nowrap` to restore horizontal scrolling.
 
@@ -334,7 +336,7 @@ A thin, static `mini.indentscope` guide marks the current indented block in sour
 
 ### Browse files with Oil
 
-Press **Space e** to browse the current file's directory in an editable list. With no file open, it starts in Neovim's working directory. Press **Enter** to open a file or folder, **-** to go up, **g.** to show hidden files, and **q** to close the list. Starting with `nvim .` also opens [Oil](https://github.com/stevearc/oil.nvim).
+Press **Space e** or run `:Ex` to browse the current file's directory in an editable list. With no file open, it starts in Neovim's working directory. Use `:Ex path` to open a specific directory. Press **Enter** to open a file or folder, **-** to go up, **g.** to show hidden files, and **q** to close the list. Starting with `nvim .` also opens [Oil](https://github.com/stevearc/oil.nvim).
 
 Make file changes by editing the list and review them when you run `:w`. On Windows, confirmed deletions are permanent because Oil's Recycle Bin integration requires PowerShell.
 
