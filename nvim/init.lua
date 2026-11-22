@@ -1201,6 +1201,8 @@ do
       for _, win in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
         local buf = vim.api.nvim_win_get_buf(win)
         if vim.api.nvim_buf_get_name(buf):match '^gitsigns%-diff://' then
+          -- Leave Space available as the leader in the file list. Use s/u to stage or unstage.
+          pcall(vim.keymap.del, 'n', '<Space>', { buffer = buf })
           vim.b[buf].dotfiles_git_review_root = root
           git_reviews[key] = { tab = vim.api.nvim_get_current_tabpage(), win = win, buf = buf }
           break
