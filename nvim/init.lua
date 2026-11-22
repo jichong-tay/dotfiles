@@ -1740,11 +1740,11 @@ do
       WinSeparator = { fg = '#475569', bg = 'NONE' },
       MiniIndentscopeSymbol = { fg = '#475569', bg = 'NONE' },
       MiniIndentscopeSymbolOff = { link = 'MiniIndentscopeSymbol' },
-      -- Muted line backgrounds and darker changed words preserve syntax colors.
+      -- Muted line backgrounds and stronger word highlights preserve syntax colors.
       DotfilesDiffOld = { bg = '#322027' },
       DotfilesDiffNew = { bg = '#1d3025' },
-      DotfilesDiffOldText = { bg = '#241016' },
-      DotfilesDiffNewText = { bg = '#102318' },
+      DotfilesDiffOldText = { bg = '#522b38' },
+      DotfilesDiffNewText = { bg = '#274637' },
       DotfilesDiffGap = { fg = '#718096', bg = 'NONE' },
       DiffAdd = { link = 'DotfilesDiffNew' },
       DiffDelete = { link = 'DotfilesDiffGap' },
