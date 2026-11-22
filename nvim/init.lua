@@ -672,6 +672,7 @@ do
   vim.cmd 'set diffopt+=algorithm:histogram'
   vim.cmd 'set diffopt+=linematch:60'
   vim.cmd 'set diffopt+=inline:word'
+  vim.opt.diffopt:append 'followwrap'
 
   -- Gitsigns derives staged hunks from HEAD vs the buffer, then drops unstaged
   -- hunks only when both start on the same line (see the TODO in
