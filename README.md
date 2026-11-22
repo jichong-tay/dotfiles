@@ -186,9 +186,10 @@ Use **Space h h** from a repository directory to open the Git status and diff pa
 | **Space h f** | Force-refresh this repository's open review file lists and ahead/behind commit counts (no fetch). |
 | `Ctrl+\` or **Space h g** | Open or resume LazyGit. Press `Ctrl+\` in the popup to hide it or **q** to quit. |
 | **Space h d** | From a tracked file, compare its unstaged changes side by side with the index. |
-| **Space t d** | Switch the repository review between inline and side by side, or open it inline if closed. |
-| **Space t u** | From a Git review pane, switch between all changes and unstaged changes only. |
+| **Space t d** | Open the current file's diff inline or switch between inline and side by side. Also switches the layout inside the Git review. |
+| **Space t u** | Switch between all changes and unstaged changes only for the current file or the Git review. |
 | **Space h p** | Preview just the change under the cursor in a popup. |
+| **Space h i** | Preview just the change under the cursor inline. |
 | **go** | From the working-file pane, open an editing tab at the same line and column with the inline diff enabled. |
 | **]c** / **[c** | Move to the next / previous change. |
 
@@ -200,7 +201,9 @@ The inline review uses the same configured diff matching as the side-by-side lay
 
 When the Git revision uses LF and the Windows working file uses CRLF, inline review compares the visible buffer text so line-ending differences do not color the entire file. This also handles the reverse format difference. File bytes, line-ending settings, and Git's staging comparison stay unchanged.
 
-The **Space h h** review opens inline against `HEAD`, showing staged and unstaged changes. Press **Space t d** from any review pane to switch layouts while keeping the current file and comparison scope. From elsewhere in the repository, **Space t d** brings its review forward and switches layouts, or opens it inline on the first press if no review exists.
+From an open tracked file, **Space t d** starts an inline comparison against `HEAD`. Press it again to switch layouts. **Space t u** switches the comparison between `HEAD` (all changes) and the index (unstaged changes), keeping the layout. If you start with **Space t u**, it opens the unstaged comparison inline. Run `:Gitsigns diffthis unified=true` to close the inline diff, or `:close` in the left pane to close the split.
+
+The **Space h h** review opens inline against `HEAD`, showing staged and unstaged changes. Press **Space t d** from any review pane to switch layouts while keeping the current file and comparison scope. From a repository tab without a tracked file open, **Space t d** brings its review forward and switches layouts, or opens it inline if closed.
 
 Use **Ctrl+h / Ctrl+l** to move between panes, or **Ctrl+w**, then **w**, to cycle through them. In the file list, **Enter** opens a file, **s / u** stage or unstage it, **gu** switches layouts, **g?** shows help, and **q** closes the review. **]f / [f** move between changed files. **gt / gT** move between Neovim tabs.
 

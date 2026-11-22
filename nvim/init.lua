@@ -853,6 +853,7 @@ do
       vim.keymap.set('n', '<leader>hS', gitsigns.stage_buffer, { desc = 'git [S]tage buffer', buf = bufnr })
       vim.keymap.set('n', '<leader>hR', gitsigns.reset_buffer, { desc = 'git [R]eset buffer', buf = bufnr })
       vim.keymap.set('n', '<leader>hp', gitsigns.preview_hunk, { desc = 'git [p]review hunk', buf = bufnr })
+      vim.keymap.set('n', '<leader>hi', gitsigns.preview_hunk_inline, { desc = 'git preview hunk [i]nline', buf = bufnr })
       vim.keymap.set('n', '<leader>hb', function() gitsigns.blame_line { full = true } end, { desc = 'git [b]lame line', buf = bufnr })
       vim.keymap.set('n', '<leader>hd', function() gitsigns.diffthis(nil, { vertical = true }) end, { desc = 'git [d]iff unstaged changes', buf = bufnr })
       vim.keymap.set('n', '<leader>hQ', function() gitsigns.setqflist 'all' end, { desc = 'git hunk [Q]uickfix list (all files in repo)', buf = bufnr })
@@ -1154,6 +1155,17 @@ do
   local review_panels = setmetatable({}, { __mode = 'v' })
   local review_toggles_supported = false
   local review_async = require 'gitsigns.async'
+  local unified = require 'gitsigns.unified'
+  local git_cache = require('gitsigns.cache').cache
+  local show_diff_buffers
+  local function set_comparison_text(buf, text)
+    vim.bo[buf].modifiable = true
+    vim.bo[buf].endofline = text[#text] == ''
+    vim.bo[buf].fileformat = text[1] and text[1]:sub(-1) == '\r' and 'dos' or 'unix'
+    require('gitsigns.util').set_lines(buf, 0, -1, text)
+    vim.bo[buf].modifiable = false
+    vim.bo[buf].modified = false
+  end
   local function review_in_current_tab()
     for _, win in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
       local panel = review_panels[vim.api.nvim_win_get_buf(win)]
@@ -1184,6 +1196,7 @@ do
     end
     local panel = upvalue(require 'gitsigns.actions.diff', 'DiffPanel')
     local refresh = type(panel) == 'table' and panel.refresh
+    show_diff_buffers = refresh and panel.show_buffers
     local read_review, slot
     if refresh then read_review, slot = upvalue(refresh, 'git_diff') end
     local read_diff = read_review and upvalue(read_review, 'read_diff')
@@ -1282,12 +1295,8 @@ do
         buf = vim.api.nvim_create_buf(false, true)
         self.scratch[key] = buf
         vim.bo[buf].bufhidden = 'wipe'
-        vim.bo[buf].endofline = text[#text] == ''
-        if text[1] and text[1]:sub(-1) == '\r' then vim.bo[buf].fileformat = 'dos' end
-        require('gitsigns.util').set_lines(buf, 0, -1, text)
         vim.bo[buf].filetype = vim.filetype.match { filename = path } or ''
-        vim.bo[buf].modifiable = false
-        vim.bo[buf].modified = false
+        set_comparison_text(buf, text)
         return buf, true, false
       end
 
@@ -1319,21 +1328,142 @@ do
       end
     end
   end
+  local file_diffs = {}
+  local function current_file_diff(state)
+    local win = state.right_win
+    if not state.base or not vim.api.nvim_win_is_valid(win) or vim.api.nvim_win_get_buf(win) ~= state.buf then return false end
+    local view = unified.get_view(win)
+    return view and view.base == state.base or state.left_win and vim.api.nvim_win_is_valid(state.left_win) and vim.wo[win].diff
+      and vim.wo[state.left_win].diff and vim.api.nvim_win_get_buf(state.left_win) == state.base
+  end
+  local function close_file_diff(state)
+    local win, base = state.right_win, state.base
+    file_diffs[win] = nil
+    local left = state.left_win
+    if left and vim.api.nvim_win_is_valid(left) and vim.api.nvim_win_get_buf(left) == base then vim.api.nvim_win_close(left, true) end
+    if left and vim.api.nvim_win_is_valid(win) and vim.api.nvim_win_get_buf(win) == state.buf then
+      vim.api.nvim_win_call(win, function() vim.cmd.diffoff() end)
+    end
+    if base and vim.api.nvim_buf_is_valid(base) then vim.api.nvim_buf_delete(base, { force = true }) end
+  end
+  local function cached_file_base(entry, unstaged)
+    if entry.git_obj.revision or entry.file_mode then return end
+    if unstaged then return entry.compare_text end
+    return entry.compare_text_head
+  end
+  local function read_file_base(entry, unstaged)
+    local text = cached_file_base(entry, unstaged)
+    if text then return text end
+    local git = entry.git_obj
+    local err
+    if unstaged then text, err = git.repo:get_show_text(':0:' .. git.relpath, git.encoding)
+    else text, err = git:get_show_text 'HEAD' end
+    if err then
+      local errors = require('gitsigns.git.errors').e
+      if not err:match(errors.path_does_not_exist) and not err:match(errors.path_exist_on_disk_but_not_in)
+        and not err:find("invalid object name 'HEAD'", 1, true) and not err:find('not in the index', 1, true) then
+        error(err, 0)
+      end
+    end
+    return text
+  end
+  local function sync_file_diff_base(state, text)
+    if text and state.text ~= text then
+      set_comparison_text(state.base, text)
+      state.text = text
+    end
+  end
+  require('gitsigns.manager').on_update(function(ctx)
+    for _, state in pairs(file_diffs) do
+      if state.buf == ctx.bufnr and not state.running and current_file_diff(state) then
+        sync_file_diff_base(state, cached_file_base(ctx.bcache, state.unstaged))
+      end
+    end
+  end)
+  local function clean_file_diffs()
+    if not next(file_diffs) then return end
+    vim.schedule(function()
+      for _, state in pairs(file_diffs) do
+        if not state.running and not current_file_diff(state) then close_file_diff(state) end
+      end
+    end)
+  end
+  local file_diff_group = vim.api.nvim_create_augroup('DotfilesFileDiff', { clear = true })
+  vim.api.nvim_create_autocmd({ 'BufWinLeave', 'WinClosed' }, { group = file_diff_group, callback = clean_file_diffs })
+  vim.api.nvim_create_autocmd('OptionSet', { group = file_diff_group, pattern = 'diff', callback = clean_file_diffs })
+
+  local function toggle_file_diff(scope)
+    if not show_diff_buffers then return false end
+    local win, buf = vim.api.nvim_get_current_win(), vim.api.nvim_get_current_buf()
+    local state = file_diffs[win] or vim.iter(vim.tbl_values(file_diffs)):find(function(diff) return diff.left_win == win end)
+    if state and not state.running and not current_file_diff(state) then
+      close_file_diff(state)
+      state = nil
+      win, buf = vim.api.nvim_get_current_win(), vim.api.nvim_get_current_buf()
+    end
+    local entry = git_cache[state and state.buf or buf]
+    if not entry or not entry.git_obj.relpath or (not state and vim.bo[buf].buftype ~= '') then return false end
+    if not state and vim.wo[win].diff then
+      vim.notify('Close the existing diff split before switching to a file comparison.', vim.log.levels.INFO)
+      return true
+    end
+    local inline = not state and unified.get_view(win)
+    local has_layout = state ~= nil or inline ~= nil
+    if not state then
+      local unstaged = inline and vim.api.nvim_buf_get_name(inline.base):find('//:0:', 1, true) ~= nil or false
+      state = { buf = buf, panel_win = win, right_win = win, desired = { diff = 'unified', unstaged = unstaged } }
+      file_diffs[win] = state
+    end
+    local layout, unstaged = state.desired.diff, state.desired.unstaged
+    if scope then unstaged = not unstaged
+    elseif has_layout then layout = layout == 'unified' and 'split' or 'unified' end
+    state.desired = { diff = layout, unstaged = unstaged }
+    state.request = state.desired
+    if state.running then return true end
+
+    state.running = true
+    review_async.run(function()
+      while state.request do
+        local request = state.request
+        state.request = nil
+        local text = read_file_base(entry, request.unstaged)
+        local source = state.right_win
+        local focus = vim.api.nvim_get_current_win()
+        if not vim.api.nvim_win_is_valid(source) or vim.api.nvim_win_get_buf(source) ~= state.buf
+          or (focus ~= source and focus ~= state.left_win) then return end
+        if not state.base then
+          state.base = vim.api.nvim_create_buf(false, true)
+          vim.bo[state.base].bufhidden = 'hide'
+          vim.bo[state.base].filetype = vim.bo[state.buf].filetype
+        end
+        sync_file_diff_base(state, text)
+        state.diff, state.unstaged = request.diff, request.unstaged
+        show_diff_buffers(state, state.buf, state.base)
+        if focus == state.left_win and vim.api.nvim_win_is_valid(focus) then vim.api.nvim_set_current_win(focus) end
+      end
+    end):await(function(err)
+      state.running = false
+      clean_file_diffs()
+      if err then vim.notify(err, vim.log.levels.ERROR) end
+    end)
+    return true
+  end
   vim.keymap.set('n', '<leader>tu', function()
+    local panel = review_in_current_tab()
+    if not panel and toggle_file_diff(true) then return end
     if not review_toggles_supported then
       vim.notify('The unstaged review toggle requires the pinned Gitsigns version.', vim.log.levels.WARN)
       return
     end
-    local panel = review_in_current_tab()
     if not panel then
-      vim.notify('Open the Git review with Space h h first.', vim.log.levels.INFO)
+      vim.notify('Open a tracked file or the Git review first.', vim.log.levels.INFO)
       return
     end
     local scope = panel.dotfiles_scope
     scope.used, scope.requested = true, not scope.requested
     scope.reuse = not (panel.active_action or panel.pending_refresh)
     review_async.run(panel.run_action, panel, 'refresh', true):raise_on_error()
-  end, { desc = 'Toggle [u]nstaged-only Git review' })
+  end, { desc = 'Toggle [u]nstaged-only diff' })
   local force_git_refresh
   local function refresh_git_review(panel, root)
     local group = 'gitsigns_diff_' .. panel
@@ -1391,32 +1521,33 @@ do
   end
   vim.keymap.set('n', '<leader>hh', function() open_git_review(current_git_root()) end, { desc = 'Open Git review' })
   vim.keymap.set('n', '<leader>td', function()
+    local panel = review_in_current_tab()
+    local root = not panel and current_git_root()
+    local key = root and git_root_key(root)
+    local opening = key and opening_reviews[key]
+    if not panel and not opening and toggle_file_diff(false) then return end
     if not review_toggles_supported then
       vim.notify('The Git review layout toggle requires the pinned Gitsigns version.', vim.log.levels.WARN)
       return
     end
-    local panel = review_in_current_tab()
     if panel then
       toggle_review_layout(panel)
       return
     end
-    local root = current_git_root()
     if not root then
       vim.notify('Not in a Git repository.', vim.log.levels.INFO)
       return
     end
-    local key = git_root_key(root)
     local review = find_git_review(key)
     if review and review_panels[review.buf] then
       vim.api.nvim_set_current_win(review.win)
       toggle_review_layout(review_panels[review.buf])
-    elseif opening_reviews[key] then
-      local opening = opening_reviews[key]
+    elseif opening then
       opening.toggle_layout = not opening.toggle_layout
     else
       open_git_review(root)
     end
-  end, { desc = 'Toggle Git review [d]iff layout' })
+  end, { desc = 'Toggle [d]iff layout' })
   vim.keymap.set('n', 'go', function()
     if vim.bo.buftype ~= '' or vim.api.nvim_buf_get_name(0) == '' then
       vim.notify('Move to the working file pane before opening it in a new tab.', vim.log.levels.INFO)
