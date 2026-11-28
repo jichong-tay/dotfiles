@@ -2739,6 +2739,14 @@ do
     gopls = { settings = { gopls = { templateExtensions = { 'gotmpl', 'gotmpls' } } } },
     ty = {}, -- Python type checking and navigation
     ruff = {}, -- Python linting and formatting
+    ts_ls = {
+      -- Launch the Windows user-local npm install directly through Node.
+      cmd = is_windows and {
+        'node',
+        vim.env.USERPROFILE .. '/.local/typescript/node_modules/typescript-language-server/lib/cli.mjs',
+        '--stdio',
+      } or nil,
+    },
     tailwindcss = {
       -- Launch the Windows user-local npm install directly through Node.
       cmd = is_windows and {

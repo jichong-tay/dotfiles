@@ -85,6 +85,16 @@ gopls version
 
 Launch Neovim from that CMD window, open a `.go` file in your project, and check for `gopls` in `:checkhealth vim.lsp`. The config also recognises `.gotmpl` and `.gotmpls` as Go templates.
 
+### Set up JavaScript and TypeScript without Mason
+
+With Node.js 22.22.2 or newer on `PATH`, run this in CMD:
+
+```cmd
+npm.cmd install --global --prefix "%USERPROFILE%\.local\typescript" typescript@6 typescript-language-server
+```
+
+The config launches the server through Node. After copying the updated `init.lua` and restarting Neovim, open a JavaScript or TypeScript project file and look for `ts_ls` under **Active Clients** in `:checkhealth vim.lsp`. The same server covers JSX and TSX.
+
 ### Set up Tailwind CSS without Mason
 
 With Node.js and npm on `PATH`, install the [Tailwind CSS language server](https://github.com/tailwindlabs/tailwindcss-intellisense/tree/main/packages/tailwindcss-language-server) into your user folder from CMD:
